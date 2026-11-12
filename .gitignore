@@ -1,0 +1,33 @@
+# Data and local databases
+data/
+*.duckdb
+*.duckdb.wal
+*.parquet
+
+# Environments and credentials
+.venv/
+.venv-*/
+.env
+.env.*
+!.env.example
+kaggle.json
+
+# Python and notebooks
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+
+# Local service state
+pg_data/
+metabase/local/
+*.dump
+*.log
+
+# Local workspace and editor settings
+.local/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
