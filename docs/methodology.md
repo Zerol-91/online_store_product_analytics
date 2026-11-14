@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the working analysis design. Calculations have not been implemented. Data-dependent choices, including duplicate handling and purchase-session validity, will be finalized after the initial audit and before reporting results.
+This document describes the working analysis design. The single-file input audit is implemented and tested on synthetic events; business-metric calculations are not implemented yet. Data-dependent choices, including duplicate handling and purchase-session validity, will be finalized after the source-data audit and before reporting results.
 
 ## Observation scope
 
@@ -16,6 +16,8 @@ October provides a lookback period. Subsequent first-purchase cohorts are still 
 - Keep missing brands and category codes as explicit unknown groups.
 - Report events with missing user/session identifiers separately. Never merge unrelated missing-session events into one session.
 - Reconcile exclusions, row counts, unique keys, and purchase-value totals at each transformation.
+
+The initial audit treats empty and whitespace-only fields as missing. Nonempty values that cannot be parsed as a timestamp or finite numeric price are counted as invalid, separately from missing fields. Zero and negative prices are separate counts. All rows, including exact duplicate rows, remain included. Source timestamps are converted to UTC for bounds. Duplicate profiling and identifier-validity checks will be added before staging; the initial report does not certify the dataset as clean.
 
 ## Units and metrics
 

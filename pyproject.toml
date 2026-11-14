@@ -1,0 +1,8 @@
+[project]
+name = "online-store-product-analytics"
+version = "0.1.0"
+description = "Purchase funnel and repeat-purchase analysis of cosmetics store events."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "duckdb>=2.0.0",
+]
