@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the working analysis design. The input audit has run on all five source files, and the duplicate-retention policy is selected. Business-metric calculations are not implemented yet; session validity and other data-dependent definitions still require investigation.
+This document describes the working analysis design. All five files are loaded into validated staging, with duplicate flags and source-session diagnostics. The duplicate-retention and 30-minute episode policies are selected. The episode table and business-metric calculations are not implemented yet.
 
 ## Observation scope
 
@@ -25,17 +25,37 @@ The input audit treats empty and whitespace-only fields as missing. Nonempty val
 - A duplicate matches all nine original fields as parsed strings; empty fields are parsed as NULL. Input filename and row position are not part of this comparison.
 - The 905 excess purchase copies represent 0.0703% of purchase rows. The sum of positive purchase-event prices is 6,351,830.29 before exact deduplication and 6,348,267.70 after it: a difference of 3,562.59, or 0.0561%. These are recorded event-price sums in source units, not confirmed net sales or order totals.
 - The sensitivity query uses `DECIMAL(24, 6)` for price arithmetic; no price-precision mismatches were found in the source files.
-- **Selected policy:** preserve all rows. Staging will add a duplicate-group size and membership flag; these flag every member of a matching group. The excess-row count remains `group size - 1`. Do not infer that matching purchase rows are tracking errors, because item quantity is unknown. Report the alternate deduplicated monetary estimate as sensitivity.
+- **Selected policy:** preserve all rows. Staging contains a duplicate-group size and membership flag; these flag every member of a matching group. The excess-row count remains `group size - 1`. Do not infer that matching purchase rows are tracking errors, because item quantity is unknown. Report the alternate deduplicated monetary estimate as sensitivity.
 - An ordered session funnel counts step existence, so exact repeated copies of the same event do not change whether a qualifying chain exists. Event-volume analyses remain sensitive to duplication and require explicit labeling.
-- No source rows were removed or flagged in-place during this audit. Staging flags are not implemented yet.
+- No source rows were removed or flagged in-place. Staging flags are implemented separately in DuckDB.
 
-There are 4,598 events without a session identifier; none are purchase events. There are 104,157 zero-price events (one purchase) and 131 negative-price events (126 purchases). `category_code` is missing in 98.29% of rows, while `category_id` is populated; `brand` is missing in 42.32%. No user ID, product ID, category ID, event-time, event-type, or price values are missing, and no timestamp/price parse errors or unexpected event types were found. Nonpositive prices are reported separately; row-level validity flags will be added in staging. These values must not be silently treated as refunds.
+There are 4,598 events without a session identifier; none are purchase events. There are 104,157 zero-price events (one purchase) and 131 negative-price events (126 purchases). `category_code` is missing in 98.29% of rows, while `category_id` is populated; `brand` is missing in 42.32%. No user ID, product ID, category ID, event-time, event-type, or price values are missing, and no timestamp/price parse errors or unexpected event types were found. Nonpositive prices have a staging flag. These values must not be silently treated as refunds.
+
+### Staging rules
+
+`raw_events` preserves the nine original string fields and adds a filename and record number within that file. The record number supports traceability; it is not evidence of behavioral order for tied timestamps. Duplicate grouping precedes type conversion and excludes those two metadata fields.
+
+`stg_events` stores finite UTC timestamps, integer IDs, and `DECIMAL(24, 6)` prices. IDs must contain only digits after trimming and fit in signed BIGINT; zero is not rejected without a source-specific rule. Unrepresentable values become NULL with a quality flag. Price conversion is checked for numeric precision loss. Blank session tokens become NULL; nonblank tokens are trimmed without changing case. No UUID format restriction is imposed.
+
+Session eligibility requires a convertible user ID, a nonblank session token, and a valid finite timestamp. Product/category/price problems remain flagged without removing behavior events. All 20,692,840 rows remain in staging; 20,688,242 are session-eligible. No ID or price conversion failures occurred in the real dataset. The positive purchase-event price sum reconciles between raw data, staging, and eligible session aggregates: 6,351,830.29 source units, with zero value excluded by session eligibility.
+
+### Source-session diagnostics and episode decision — November 14, 2026
+
+The preliminary `sessions` table uses `(user_id, user_session)` across every file, yielding 4,536,272 groups and 155,617 purchase-containing groups. It is a diagnostic grouping, not the final visit definition.
+
+- 272 session tokens belong to multiple users, affecting 603 composite-key groups. The user ID must remain part of the key.
+- 14,228 groups cross month boundaries and must not be truncated during monthly ingestion.
+- 36,194 groups span more than 24 hours and 14,717 span more than seven days. The maximum span is 13,099,556 seconds.
+- 2,686 purchase groups contain multiple distinct purchase timestamps; 1,262 have consecutive purchase timestamps more than 30 minutes apart, including 676 with gaps over 24 hours.
+- 184,451 groups contain consecutive distinct activity timestamps more than 30 minutes apart, generating 274,307 additional fragments under that threshold.
+
+**Selected policy for the funnel:** within each composite source key, start a new episode when the activity gap is strictly greater than 30 minutes. Equal timestamps and gaps of exactly 30 minutes stay in the same episode; a month boundary alone does not start a new one. Never merge separate source tokens or different users. The implied total is 4,810,579 episodes (+6.05%). Keep the original source-key version as sensitivity. This threshold is an explicit operational assumption and does not establish the true number of visits or orders. Episode materialization is the next step; the current table still contains the original source-key groups.
 
 ## Units and metrics
 
 | Metric | Working definition | Interpretation |
 |---|---|---|
-| Session | `(user_id, user_session)` across all source files | Check duration, identifier reuse, and month-boundary continuity |
+| Session episode | `(user_id, user_session, episode_number)`, split at inactivity gaps >30 minutes across all source files | Selected rule; episode table pending. Original source-key groups remain a sensitivity baseline |
 | Purchase session | Session containing a purchase event | An order proxy; multiple real orders within a session cannot be identified reliably |
 | Purchase value | Sum of valid purchase-event prices under the selected duplicate policy | Observed event value; not profit or confirmed net sales |
 | Session funnel | Existence of view → cart → purchase in chronological order within a session | Any product in the session; not a product-level cart reconstruction |

@@ -2,7 +2,7 @@
 
 Product analytics of a cosmetics store: purchase funnel, cart abandonment, and repeat purchases around Black Friday 2019.
 
-**Status: work in progress.** The input audit has run on all five source files: 20,692,840 events. Daily coverage and exact-row duplicate sensitivity are measured. Staging, funnel/cohort calculations, and business recommendations are pending.
+**Status: work in progress.** All 20,692,840 source events are loaded into validated DuckDB staging with quality and duplicate flags. Source-session diagnostics are complete. Operational session episodes, funnel/cohort calculations, and business recommendations are pending.
 
 ## Business question
 
@@ -20,7 +20,7 @@ A second question examines whether customers whose first observed purchase occur
 
 ## Data
 
-[eCommerce Events History in Cosmetics Shop](https://www.kaggle.com/datasets/mkechinov/ecommerce-events-history-in-cosmetics-shop), published by Michael Kechinov / REES46 on Kaggle. The five source files cover October 2019–February 2020; actual timestamp coverage will be checked during ingestion. Dataset terms remain those specified by the publisher on Kaggle.
+[eCommerce Events History in Cosmetics Shop](https://www.kaggle.com/datasets/mkechinov/ecommerce-events-history-in-cosmetics-shop), published by Michael Kechinov / REES46 on Kaggle. The five source files cover October 2019–February 2020, as verified during the input audit. Dataset terms remain those specified by the publisher on Kaggle.
 
 Raw data is not included in this repository. The event schema has no order ID, confirmed item quantity, acquisition cost, or cost of goods. Purchase sessions will therefore be treated as order proxies, subject to validation. Abandoned-cart value is not equivalent to recoverable revenue, and observational cohort differences do not establish a causal promotion effect.
 
@@ -41,7 +41,22 @@ Events are present on all 152 calendar days from October 1, 2019 to February 29,
 
 The audit found 4,598 events without a session identifier, 104,157 zero-price events, and 131 negative-price events. `category_code` is missing in 98.29% of rows and `brand` in 42.32%; category IDs are present. Of the excess duplicate rows, 991,820 are `remove_from_cart`, while only 905 are `purchase`. Removing the latter would reduce the sum of positive purchase-event prices by 0.0561%.
 
-The selected policy preserves source rows and will flag duplicate groups in staging. The alternate deduplicated purchase-value calculation is a sensitivity check, not the primary estimate. No cleaning or duplicate removal has been applied.
+Staging preserves all source rows and flags duplicate-group membership. The alternate deduplicated purchase-value calculation is a sensitivity check, not the primary estimate. No source rows have been removed.
+
+## Staging and session diagnostics
+
+The local database contains `raw_events` (original fields and source-record identifiers), `stg_events` (typed fields and quality flags), `sessions` (preliminary source-key aggregates), and `source_files` (input checksums and counts).
+
+All row counts, event-type counts, unique keys, and positive purchase-price sums reconcile. Of the source events, 20,688,242 have a valid user, session key, and timestamp; the remaining 4,598 stay in staging. All identifiers and prices in this source set convert without errors. The positive purchase-event price sum remains 6,351,830.29 source units, with no purchase value excluded by session eligibility.
+
+The preliminary table groups events by `(user_id, user_session)` across all files:
+
+- 4,536,272 source-key groups across 1,639,151 users; 155,617 groups contain purchases.
+- 14,228 groups cross month boundaries. A shared session token occurs across different users for 272 tokens; the composite key keeps those users separate.
+- 36,194 groups last more than 24 hours; 676 purchase groups have consecutive purchase timestamps more than 24 hours apart.
+- 184,451 groups contain activity gaps exceeding 30 minutes. Splitting at those gaps would produce 4,810,579 episodes, 6.05% more than the source-key count.
+
+The selected funnel definition splits each source-key group at gaps **greater than 30 minutes**, retaining the original keys for sensitivity checks. This is an operational definition, not a verified visit boundary. The current `sessions` table remains a diagnostic source-key table; the episode table will be built before the funnel.
 
 ## Stack
 
@@ -97,3 +112,11 @@ foreach ($month in @('2019-Oct', '2019-Nov', '2019-Dec', '2020-Jan', '2020-Feb')
 ```
 
 All source columns are initially read as strings; parsing failures are counted separately. Exact duplicates match all nine original fields, excluding file metadata. `--duplicates` adds a read-only sensitivity calculation; it does not remove any rows. Larger groupings may use temporary disk space in `data/processed/audit_tmp/` under the 1 GB DuckDB memory limit. All five files were audited; detailed JSON reports remain local. This is the audit step, not the complete analytical pipeline.
+
+Build staging and preliminary sessions:
+
+```powershell
+uv run --locked python src/build_staging.py
+```
+
+The command creates `data/processed/shop.duckdb` and `data/reports/staging_build.json`. It records source SHA-256 checksums, row counts, validation results, session diagnostics, and table fingerprints. Tables are replaced in one validated transaction on rebuild. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. The build was run on all five source files. Repeat-build and rollback behavior are covered by synthetic-data tests.
