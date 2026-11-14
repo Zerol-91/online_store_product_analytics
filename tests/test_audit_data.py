@@ -5,6 +5,7 @@ import hashlib
 import sys
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -41,7 +42,7 @@ class AuditTests(unittest.TestCase):
             {"event_time": "2019-11-01 01:00:00+01:00"},
         ])
         before = self.source.read_bytes()
-        report = audit_csv(self.source)
+        report = audit_csv(self.source, include_duplicates=True)
         summary = report["summary"]
         for field, expected in {
             "row_count": 9, "invalid_event_time": 1, "missing_event_time": 1,
@@ -52,15 +53,38 @@ class AuditTests(unittest.TestCase):
             self.assertEqual(summary[field], expected, field)
         self.assertEqual(summary["last_event_utc"], "2019-11-01T00:00:00+00:00")
         self.assertEqual(sum(row["row_count"] for row in report["by_event_type"]), 9)
+        self.assertEqual(sum(row["row_count"] for row in report["by_day"]), 9)
+        self.assertEqual(report["by_day"][0], {"event_date_utc": None, "row_count": 2})
+        duplicate_view = next(row for row in report["duplicate_sensitivity"] if row["event_type"] == "view")
+        self.assertEqual(duplicate_view["duplicate_rows"], 1)
+        self.assertEqual(duplicate_view["rows_in_duplicate_groups"], 2)
+        self.assertEqual(Decimal(duplicate_view["positive_price_value_before_dedup"]), Decimal("37.50"))
+        self.assertEqual(Decimal(duplicate_view["positive_price_value_after_dedup"]), Decimal("25.00"))
         self.assertEqual(self.source.read_bytes(), before)
         self.assertEqual(report["source"]["sha256"], hashlib.sha256(before).hexdigest())
         self.assertEqual(audit_csv(self.source)["summary"], summary)
 
     def test_empty_file_with_header_reports_zero_rows(self):
         self.write_events([])
-        summary = audit_csv(self.source)["summary"]
+        report = audit_csv(self.source, include_duplicates=True)
+        summary = report["summary"]
         self.assertEqual(summary["row_count"], 0)
         self.assertIsNone(summary["first_event_utc"])
+        self.assertEqual(report["by_day"], [])
+        self.assertEqual(report["duplicate_sensitivity"], [])
+
+    def test_duplicate_purchase_sensitivity_uses_all_source_fields(self):
+        self.write_events([
+            {"event_type": "purchase", "price": "12.50"},
+            {"event_type": "purchase", "price": "12.50"},
+            {"event_type": "purchase", "price": "12.50", "user_session": "s2"},
+        ])
+        result = audit_csv(self.source, include_duplicates=True)["duplicate_sensitivity"][0]
+        self.assertEqual(result["row_count"], 3)
+        self.assertEqual(result["unique_rows"], 2)
+        self.assertEqual(result["duplicate_rows"], 1)
+        self.assertEqual(Decimal(result["positive_price_value_before_dedup"]), Decimal("37.50"))
+        self.assertEqual(Decimal(result["positive_price_value_after_dedup"]), Decimal("25.00"))
 
     def test_unexpected_header_fails(self):
         self.source.write_text("event_time,event_type\n", encoding="utf-8")

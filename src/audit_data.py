@@ -19,7 +19,7 @@ COLUMNS = (
 SQL_PATH = ROOT / "sql" / "00_audit" / "profile_events.sql"
 
 
-def audit_csv(source: Path) -> dict:
+def audit_csv(source: Path, *, include_duplicates: bool = False) -> dict:
     """Scan all rows with explicit string types; count parse failures separately."""
     source = source.resolve()
     if not source.is_file():
@@ -37,7 +37,12 @@ def audit_csv(source: Path) -> dict:
     with source.open("rb") as handle:
         checksum = hashlib.file_digest(handle, "sha256").hexdigest()
 
-    with duckdb.connect(config={"memory_limit": "1GB", "threads": "4"}) as connection:
+    temporary_directory = ROOT / "data" / "processed" / "audit_tmp"
+    temporary_directory.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(config={
+        "memory_limit": "1GB", "threads": "4",
+        "temp_directory": str(temporary_directory),
+    }) as connection:
         connection.execute("SET TimeZone = 'UTC'")
         connection.read_csv(
             str(source),
@@ -55,6 +60,16 @@ def audit_csv(source: Path) -> dict:
         cursor = connection.execute(SQL_PATH.read_text(encoding="utf-8"))
         names = [column[0] for column in cursor.description]
         rows = [dict(zip(names, row)) for row in cursor.fetchall()]
+        daily_cursor = connection.execute(SQL_PATH.with_name("profile_days.sql").read_text(encoding="utf-8"))
+        daily = [
+            {"event_date_utc": day.isoformat() if day else None, "row_count": count}
+            for day, count in daily_cursor.fetchall()
+        ]
+        duplicates = None
+        if include_duplicates:
+            cursor = connection.execute(SQL_PATH.with_name("profile_duplicates.sql").read_text(encoding="utf-8"))
+            names = [column[0] for column in cursor.description]
+            duplicates = [dict(zip(names, row)) for row in cursor.fetchall()]
 
     after = source.stat()
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
@@ -68,12 +83,16 @@ def audit_csv(source: Path) -> dict:
         row.pop("is_summary")
     if sum(row["row_count"] for row in groups) != summary["row_count"]:
         raise ValueError("Event-type counts do not reconcile with the total row count.")
+    if sum(row["row_count"] for row in daily) != summary["row_count"]:
+        raise ValueError("Daily counts do not reconcile with the total row count.")
+    if duplicates is not None and sum(row["row_count"] for row in duplicates) != summary["row_count"]:
+        raise ValueError("Duplicate-profile counts do not reconcile with the total row count.")
     for row in [summary, *groups]:
         for key in ("first_event_utc", "last_event_utc"):
             row[key] = row[key].replace(tzinfo=timezone.utc).isoformat() if row[key] is not None else None
 
     return {
-        "audit_version": 1,
+        "audit_version": 2,
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "source": {
             "name": source.name,
@@ -85,6 +104,8 @@ def audit_csv(source: Path) -> dict:
         "scope": "All rows in one file; no deduplication, exclusions, or business metrics.",
         "summary": summary,
         "by_event_type": groups,
+        "by_day": daily,
+        "duplicate_sensitivity": duplicates,
     }
 
 
@@ -98,6 +119,10 @@ def main(argv: list[str] | None = None) -> int:
         "--output", type=Path,
         help="JSON report (default: data/reports/<input-stem>_audit.json).",
     )
+    parser.add_argument(
+        "--duplicates", action="store_true",
+        help="Also measure exact-row duplicates and price-value sensitivity (uses more disk/memory).",
+    )
     args = parser.parse_args(argv)
     output = (args.output or ROOT / "data" / "reports" / f"{args.input.stem}_audit.json").resolve()
     if output.suffix.lower() != ".json" or output.is_relative_to(ROOT / "data" / "raw"):
@@ -105,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
     if output == args.input.resolve():
         parser.error("The output must not overwrite the input.")
     try:
-        report = audit_csv(args.input)
+        report = audit_csv(args.input, include_duplicates=args.duplicates)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     except (OSError, ValueError, duckdb.Error) as error:
@@ -118,6 +143,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Invalid timestamps: {summary['invalid_event_time']:,}")
     print(f"Invalid prices: {summary['invalid_price']:,}")
     print(f"Zero / negative prices: {summary['zero_price']:,} / {summary['negative_price']:,}")
+    if report["duplicate_sensitivity"] is not None:
+        print(f"Exact duplicate rows: {sum(row['duplicate_rows'] for row in report['duplicate_sensitivity']):,}")
     print(f"Report: {output}")
     return 0
 

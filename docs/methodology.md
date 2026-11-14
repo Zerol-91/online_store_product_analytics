@@ -1,10 +1,10 @@
 # Methodology
 
-This document describes the working analysis design. The single-file input audit is implemented and tested on synthetic events; business-metric calculations are not implemented yet. Data-dependent choices, including duplicate handling and purchase-session validity, will be finalized after the source-data audit and before reporting results.
+This document describes the working analysis design. The input audit has run on all five source files, and the duplicate-retention policy is selected. Business-metric calculations are not implemented yet; session validity and other data-dependent definitions still require investigation.
 
 ## Observation scope
 
-Expected source coverage is October 2019–February 2020. Timestamps will be interpreted in UTC. Ingestion must verify file coverage, temporal gaps, event types, and identifier completeness before analysis.
+The input audit found 20,692,840 events across five files, with events on every calendar day from October 1, 2019 to February 29, 2020. Timestamps are interpreted in UTC. File timestamp ranges are within their named months and do not overlap; the per-file duplicate counts therefore cover exact duplicates across this dataset. No entire day is absent, but that alone does not prove complete tracking within days.
 
 October provides a lookback period. Subsequent first-purchase cohorts are still **first observed purchasers**, not confirmed new customers: earlier activity is unavailable.
 
@@ -17,7 +17,19 @@ October provides a lookback period. Subsequent first-purchase cohorts are still 
 - Report events with missing user/session identifiers separately. Never merge unrelated missing-session events into one session.
 - Reconcile exclusions, row counts, unique keys, and purchase-value totals at each transformation.
 
-The initial audit treats empty and whitespace-only fields as missing. Nonempty values that cannot be parsed as a timestamp or finite numeric price are counted as invalid, separately from missing fields. Zero and negative prices are separate counts. All rows, including exact duplicate rows, remain included. Source timestamps are converted to UTC for bounds. Duplicate profiling and identifier-validity checks will be added before staging; the initial report does not certify the dataset as clean.
+The input audit treats empty and whitespace-only fields as missing. Nonempty values that cannot be parsed as a timestamp or finite numeric price are counted as invalid, separately from missing fields. Zero and negative prices are separate counts. All rows, including exact duplicate rows, remain included. Source timestamps are converted to UTC for bounds. Daily and event-type totals reconcile with each file's row count. Identifier-validity and session-integrity checks are still required; this report does not certify the dataset as clean.
+
+### Audit evidence and duplicate decision — November 14, 2026
+
+- 1,109,098 rows (5.3598% of input) are extra copies beyond the first matching row; 991,820 belong to `remove_from_cart`, 115,342 to `cart`, 1,031 to `view`, and 905 to `purchase`.
+- A duplicate matches all nine original fields as parsed strings; empty fields are parsed as NULL. Input filename and row position are not part of this comparison.
+- The 905 excess purchase copies represent 0.0703% of purchase rows. The sum of positive purchase-event prices is 6,351,830.29 before exact deduplication and 6,348,267.70 after it: a difference of 3,562.59, or 0.0561%. These are recorded event-price sums in source units, not confirmed net sales or order totals.
+- The sensitivity query uses `DECIMAL(24, 6)` for price arithmetic; no price-precision mismatches were found in the source files.
+- **Selected policy:** preserve all rows. Staging will add a duplicate-group size and membership flag; these flag every member of a matching group. The excess-row count remains `group size - 1`. Do not infer that matching purchase rows are tracking errors, because item quantity is unknown. Report the alternate deduplicated monetary estimate as sensitivity.
+- An ordered session funnel counts step existence, so exact repeated copies of the same event do not change whether a qualifying chain exists. Event-volume analyses remain sensitive to duplication and require explicit labeling.
+- No source rows were removed or flagged in-place during this audit. Staging flags are not implemented yet.
+
+There are 4,598 events without a session identifier; none are purchase events. There are 104,157 zero-price events (one purchase) and 131 negative-price events (126 purchases). `category_code` is missing in 98.29% of rows, while `category_id` is populated; `brand` is missing in 42.32%. No user ID, product ID, category ID, event-time, event-type, or price values are missing, and no timestamp/price parse errors or unexpected event types were found. Nonpositive prices are reported separately; row-level validity flags will be added in staging. These values must not be silently treated as refunds.
 
 ## Units and metrics
 
