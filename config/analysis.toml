@@ -1,0 +1,9 @@
+[sessions]
+inactivity_minutes = 30
+
+[observation]
+start_utc = "2019-10-01T00:00:00"
+end_exclusive_utc = "2020-03-01T00:00:00"
+
+[funnel]
+primary_timestamp_rule = "allow_equal"

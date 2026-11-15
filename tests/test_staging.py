@@ -123,6 +123,8 @@ class StagingTests(unittest.TestCase):
             self.build()
         fingerprint = self.fetch("SELECT BIT_XOR(HASH(t)) FROM stg_events AS t")[0][0]
         self.assertEqual(str(fingerprint), first["fingerprints"]["stg_events"])
+        raw_fingerprint = self.fetch("SELECT BIT_XOR(HASH(t)) FROM raw_events AS t")[0][0]
+        self.assertEqual(str(raw_fingerprint), first["fingerprints"]["raw_events"])
 
     def test_empty_sources_produce_empty_tables(self):
         for path in self.inputs:

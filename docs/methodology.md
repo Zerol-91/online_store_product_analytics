@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the working analysis design. All five files are loaded into validated staging, with duplicate flags and source-session diagnostics. The duplicate-retention and 30-minute episode policies are selected. The episode table and business-metric calculations are not implemented yet.
+This document describes the working analysis design. Validated staging, 30-minute episodes, and ordered session funnels are implemented. Segment comparisons, the seven-day user funnel, purchase cohorts, and experiment calculations are pending.
 
 ## Observation scope
 
@@ -17,7 +17,7 @@ October provides a lookback period. Subsequent first-purchase cohorts are still 
 - Report events with missing user/session identifiers separately. Never merge unrelated missing-session events into one session.
 - Reconcile exclusions, row counts, unique keys, and purchase-value totals at each transformation.
 
-The input audit treats empty and whitespace-only fields as missing. Nonempty values that cannot be parsed as a timestamp or finite numeric price are counted as invalid, separately from missing fields. Zero and negative prices are separate counts. All rows, including exact duplicate rows, remain included. Source timestamps are converted to UTC for bounds. Daily and event-type totals reconcile with each file's row count. Identifier-validity and session-integrity checks are still required; this report does not certify the dataset as clean.
+The input audit treats empty and whitespace-only fields as missing. Nonempty values that cannot be parsed as a timestamp or finite numeric price are counted as invalid, separately from missing fields. Zero and negative prices are separate counts. All rows, including exact duplicate rows, remain included. Source timestamps are converted to UTC for bounds. Daily and event-type totals reconcile with each file's row count. Identifier conversion and session-integrity checks have been run; known limitations remain explicit below.
 
 ### Audit evidence and duplicate decision — November 14, 2026
 
@@ -49,13 +49,13 @@ The preliminary `sessions` table uses `(user_id, user_session)` across every fil
 - 2,686 purchase groups contain multiple distinct purchase timestamps; 1,262 have consecutive purchase timestamps more than 30 minutes apart, including 676 with gaps over 24 hours.
 - 184,451 groups contain consecutive distinct activity timestamps more than 30 minutes apart, generating 274,307 additional fragments under that threshold.
 
-**Selected policy for the funnel:** within each composite source key, start a new episode when the activity gap is strictly greater than 30 minutes. Equal timestamps and gaps of exactly 30 minutes stay in the same episode; a month boundary alone does not start a new one. Never merge separate source tokens or different users. The implied total is 4,810,579 episodes (+6.05%). Keep the original source-key version as sensitivity. This threshold is an explicit operational assumption and does not establish the true number of visits or orders. Episode materialization is the next step; the current table still contains the original source-key groups.
+**Selected policy for the funnel:** within each composite source key, start a new episode when the activity gap is strictly greater than 30 minutes. Equal timestamps and gaps of exactly 30 minutes stay in the same episode; a month boundary alone does not start a new one. Never merge separate source tokens or different users. The materialized total is 4,810,579 episodes (+6.05%). Keep the original source-key version as sensitivity. This threshold is an explicit operational assumption and does not establish the true number of visits or orders. `episodes` is the primary episode view; `sessions` retains the original source-key diagnostic groups.
 
 ## Units and metrics
 
 | Metric | Working definition | Interpretation |
 |---|---|---|
-| Session episode | `(user_id, user_session, episode_number)`, split at inactivity gaps >30 minutes across all source files | Selected rule; episode table pending. Original source-key groups remain a sensitivity baseline |
+| Session episode | `(user_id, user_session, episode_number)`, split at inactivity gaps >30 minutes across all source files | Implemented; original source-key groups remain a sensitivity baseline |
 | Purchase session | Session containing a purchase event | An order proxy; multiple real orders within a session cannot be identified reliably |
 | Purchase value | Sum of valid purchase-event prices under the selected duplicate policy | Observed event value; not profit or confirmed net sales |
 | Session funnel | Existence of view → cart → purchase in chronological order within a session | Any product in the session; not a product-level cart reconstruction |
@@ -66,6 +66,24 @@ The preliminary `sessions` table uses `(user_id, user_session)` across every fil
 | Repeat purchase within H days | Another purchase session after the first, within H days / eligible first-purchase users | H = 30 or 60; several item rows in the first session are not repeat purchases |
 
 An ordered funnel must search for a valid event chain, rather than compare only the first timestamp of each event type. Equal timestamps do not reveal event order: the working rule allows equality and reports a sensitivity check using strict inequalities. Purchases outside a recorded funnel chain remain visible in coverage and reconciliation tables.
+
+### Implemented session funnel — November 15, 2026
+
+Parameters are recorded in `config/analysis.toml`. Both episode and original source-key units use the same SQL chain calculation. For each unit, find the earliest view, then the earliest cart at/after that view, then the earliest purchase at/after that qualifying cart. An earlier cart or purchase does not prevent a later valid chain from qualifying. This is an any-product visit funnel, not product-level cart reconstruction. Duplicate copies affect event counts but not sequence existence.
+
+The full-chain cart denominator is the number of units with a cart after a view. Separately, the any-cart denominator includes every unit containing a cart, and conversion requires a purchase at/after its earliest cart, regardless of view. A unit that purchased before adding to cart can be a purchasing unit while still having no cart→purchase pair. Nonpositive or invalid prices do not remove a recorded purchase event from these behavioral rates; monetary sums only include valid positive prices.
+
+Primary counts: 4,501,112 viewed episodes → 745,696 qualifying cart episodes → 95,850 full-chain episodes. View→cart conversion is 16.5669%, and cart→purchase conditional on the full funnel is 12.8538%. Across all 1,049,303 cart episodes, 122,189 have a cart→purchase pair (11.6448%) and 927,114 do not (88.3552%). These are distinct denominators.
+
+There are 157,595 purchase-containing episodes. The 61,745 without a complete ordered chain decompose into 34,576 with no cart, 830 whose purchases precede their first cart, and 26,339 with a valid cart→purchase pair but no full view→cart→purchase chain. This describes recorded sequences; it does not identify tracking errors or user motives. The full-chain count is not a denominator for all observed purchase value.
+
+Strict `<` ordering gives 744,550 qualifying carts and 95,808 full chains, versus 745,696 and 95,850 under the primary `<=` rule. Original source-key units give 985,813 cart units and 125,459 cart→purchase pairs (12.7265%), versus 11.6448% using episodes: a 1.0817 percentage-point difference caused by the analysis definition. This is not a product uplift.
+
+The observation interval is `[2019-10-01 00:00:00, 2020-03-01 00:00:00)` UTC. Rates currently include all observed eligible units. Flag units whose first event is within 30 minutes of the start, and units whose last event plus 30 minutes reaches or exceeds the end. The primary episode counts are 126 near-start units and 176 potentially open units at the end; the latter include 49 classified as abandoned-cart episodes. These flags identify boundary exposure, not proven missing activity. Later analysis must not treat within-episode abandonment as permanent customer loss.
+
+The mapping keeps all 20,688,242 session-eligible events with unique source-record keys; 4,598 ineligible events stay in staging. No purchase event or positive purchase value is excluded by session eligibility in this dataset. Each session definition independently reconciles to 6,351,830.29 in positive purchase-event prices. Do not add those repeated sensitivity totals together.
+
+Builds validate mapping uniqueness, episode transitions, per-definition event/value totals, unit keys, sequence timestamps, monotone funnel counts, and purchase coverage. Both builders replace derived tables transactionally. A successful staging rebuild invalidates episode and funnel outputs; rebuild them before analysis. Source checksums, staging/table fingerprints, settings, and runtime versions are recorded in local reports. Repeatability and rollback are tested with synthetic event histories.
 
 The exact revenue identity, on a consistent eligible population and period, is:
 

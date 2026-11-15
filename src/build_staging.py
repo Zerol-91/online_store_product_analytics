@@ -157,6 +157,9 @@ def build_staging(inputs: list[Path], database: Path, *, memory_limit="1GB", thr
             connection.execute("CREATE OR REPLACE TABLE source_files (source_file VARCHAR, size_bytes BIGINT, sha256 VARCHAR, row_count BIGINT)")
             connection.executemany("INSERT INTO source_files VALUES (?, ?, ?, ?)",
                 [(item["source_file"], item["size_bytes"], item["sha256"], item["row_count"]) for item in manifest])
+            connection.execute("DROP VIEW IF EXISTS episodes")
+            for table in ("funnel_summary", "session_funnel", "episode_events"):
+                connection.execute(f"DROP TABLE IF EXISTS {table}")
             connection.execute("COMMIT")
         except Exception:
             connection.execute("ROLLBACK")

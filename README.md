@@ -2,7 +2,9 @@
 
 Product analytics of a cosmetics store: purchase funnel, cart abandonment, and repeat purchases around Black Friday 2019.
 
-**Status: work in progress.** All 20,692,840 source events are loaded into validated DuckDB staging with quality and duplicate flags. Source-session diagnostics are complete. Operational session episodes, funnel/cohort calculations, and business recommendations are pending.
+**Initial result:** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
+
+**Status: work in progress.** Event staging, 30-minute episodes, and ordered session funnels are built and validated. Segment comparisons, user-level analysis, cohorts, and business recommendations are pending.
 
 ## Business question
 
@@ -24,39 +26,27 @@ A second question examines whether customers whose first observed purchase occur
 
 Raw data is not included in this repository. The event schema has no order ID, confirmed item quantity, acquisition cost, or cost of goods. Purchase sessions will therefore be treated as order proxies, subject to validation. Abandoned-cart value is not equivalent to recoverable revenue, and observational cohort differences do not establish a causal promotion effect.
 
-## Input audit
+## Ordered funnel
 
-Source-data audit completed on November 14, 2026, before any cleaning:
+The primary unit is an episode within `(user_id, user_session)`, split at inactivity gaps **greater than 30 minutes** across all files. There are 4,810,579 episodes. Equal timestamps are allowed in the primary sequence; strict ordering is a sensitivity check.
 
-| File | Rows | Exact duplicate rows beyond the first copy |
+| Ordered stage | Episodes | Conversion from the previous stage |
 |---|---:|---:|
-| 2019-Oct.csv | 4,102,283 | 213,155 |
-| 2019-Nov.csv | 4,635,837 | 246,693 |
-| 2019-Dec.csv | 3,533,286 | 183,860 |
-| 2020-Jan.csv | 4,264,752 | 225,100 |
-| 2020-Feb.csv | 4,156,682 | 240,290 |
-| **Total** | **20,692,840** | **1,109,098** |
+| Recorded view | 4,501,112 | — |
+| Cart at/after a view | 745,696 | 16.57% |
+| Purchase at/after that cart | 95,850 | 12.85% |
 
-Events are present on all 152 calendar days from October 1, 2019 to February 29, 2020. No timestamp/price parsing failures or unexpected event types were found. This does not establish complete tracking within each day.
+Across **all** 1,049,303 episodes with a cart, 122,189 have a purchase at/after the first cart (**11.64%**). The remaining 927,114 (**88.36%**) have no such purchase within the observed episode. This denominator includes cart episodes without a qualifying view and differs from the ordered-funnel denominator above.
 
-The audit found 4,598 events without a session identifier, 104,157 zero-price events, and 131 negative-price events. `category_code` is missing in 98.29% of rows and `brand` in 42.32%; category IDs are present. Of the excess duplicate rows, 991,820 are `remove_from_cart`, while only 905 are `purchase`. Removing the latter would reduce the sum of positive purchase-event prices by 0.0561%.
+There are 157,595 purchase-containing episodes in total. Of these, 61,745 (**39.18%**) lack a complete recorded view → cart → purchase chain. Full-funnel completion therefore does not cover all purchasing activity. Strict timestamp ordering yields 95,808 full chains, 42 fewer than the primary rule. Without the 30-minute split, cart-to-purchase conversion is 12.73%, versus 11.64% with the selected episodes; the unit definition changes the estimate.
 
-Staging preserves all source rows and flags duplicate-group membership. The alternate deduplicated purchase-value calculation is a sensitivity check, not the primary estimate. No source rows have been removed.
+The analysis includes all observed eligible episodes. At the end of the dataset, 176 episodes may still be open, including 49 counted as abandoned-cart episodes. Abandonment is an observed sequence outcome, not a monetary-loss estimate or a causal explanation.
 
-## Staging and session diagnostics
+## Validation
 
-The local database contains `raw_events` (original fields and source-record identifiers), `stg_events` (typed fields and quality flags), `sessions` (preliminary source-key aggregates), and `source_files` (input checksums and counts).
+All 20,692,840 source rows remain in staging, with duplicate and quality flags. Events occur on all 152 calendar days from October 1, 2019 to February 29, 2020. The 4,598 events without session identifiers remain in staging and are excluded from episode calculations; none are purchases. Positive purchase-event prices reconcile to 6,351,830.29 source units under both session definitions.
 
-All row counts, event-type counts, unique keys, and positive purchase-price sums reconcile. Of the source events, 20,688,242 have a valid user, session key, and timestamp; the remaining 4,598 stay in staging. All identifiers and prices in this source set convert without errors. The positive purchase-event price sum remains 6,351,830.29 source units, with no purchase value excluded by session eligibility.
-
-The preliminary table groups events by `(user_id, user_session)` across all files:
-
-- 4,536,272 source-key groups across 1,639,151 users; 155,617 groups contain purchases.
-- 14,228 groups cross month boundaries. A shared session token occurs across different users for 272 tokens; the composite key keeps those users separate.
-- 36,194 groups last more than 24 hours; 676 purchase groups have consecutive purchase timestamps more than 24 hours apart.
-- 184,451 groups contain activity gaps exceeding 30 minutes. Splitting at those gaps would produce 4,810,579 episodes, 6.05% more than the source-key count.
-
-The selected funnel definition splits each source-key group at gaps **greater than 30 minutes**, retaining the original keys for sensitivity checks. This is an operational definition, not a verified visit boundary. The current `sessions` table remains a diagnostic source-key table; the episode table will be built before the funnel.
+The audit found 1,109,098 excess exact-row copies; only 905 are purchases. Their removal changes the positive purchase-price sum by 0.0561%, reported as sensitivity. Missing brands, category labels, nonpositive prices, and long-lived source tokens are documented in the [methodology](docs/methodology.md).
 
 ## Stack
 
@@ -113,10 +103,15 @@ foreach ($month in @('2019-Oct', '2019-Nov', '2019-Dec', '2020-Jan', '2020-Feb')
 
 All source columns are initially read as strings; parsing failures are counted separately. Exact duplicates match all nine original fields, excluding file metadata. `--duplicates` adds a read-only sensitivity calculation; it does not remove any rows. Larger groupings may use temporary disk space in `data/processed/audit_tmp/` under the 1 GB DuckDB memory limit. All five files were audited; detailed JSON reports remain local. This is the audit step, not the complete analytical pipeline.
 
-Build staging and preliminary sessions:
+Build staging, then episodes and funnels:
 
 ```powershell
 uv run --locked python src/build_staging.py
+uv run --locked python src/build_funnel.py
 ```
 
-The command creates `data/processed/shop.duckdb` and `data/reports/staging_build.json`. It records source SHA-256 checksums, row counts, validation results, session diagnostics, and table fingerprints. Tables are replaced in one validated transaction on rebuild. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. The build was run on all five source files. Repeat-build and rollback behavior are covered by synthetic-data tests.
+These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json` and `data/reports/funnel_build.json`. Both builders use validated transactions and record input provenance and table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel tables, so rerun the funnel builder afterwards.
+
+The analysis parameters are in `config/analysis.toml`. `episode_events` maps eligible source records to episodes; `episodes` is the primary per-episode view; `session_funnel` stores per-unit results for both session definitions; `funnel_summary` contains counts and rates for both timestamp rules. The original `sessions` table remains the source-key diagnostic baseline.
+
+Both builders have run on the full dataset. Repeat-build, boundary, sequence-order, and rollback cases are covered by synthetic-data tests.
