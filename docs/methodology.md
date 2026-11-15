@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the working analysis design. Validated staging, 30-minute episodes, and ordered session funnels are implemented. Segment comparisons, the seven-day user funnel, purchase cohorts, and experiment calculations are pending.
+This document describes the working analysis design. Validated staging, 30-minute episodes, ordered session/user funnels, and user-clustered segment comparisons are implemented. Purchase cohorts and experiment calculations are pending.
 
 ## Observation scope
 
@@ -91,6 +91,20 @@ The exact revenue identity, on a consistent eligible population and period, is:
 
 Conditional funnel conversions are diagnostic metrics. They need not explain every recorded purchase if preceding events are missing.
 
+### Implemented seven-day user window — November 15, 2026
+
+Build the first observed activity, view, and purchase timestamps using every event with valid user ID and timestamp, including events without a session token. Keep the complete history when establishing the first view; a later date filter must not re-anchor an existing user at a later view.
+
+The outcome window is `[first_view, first_view + 7 days]`, including the deadline. Because observation ends at an exclusive timestamp, eligibility requires `first_view + 7 days < observation_end_exclusive`. A user whose deadline equals the exclusive end is not fully observed. Users without a view or without full follow-up remain in the user table with flags and are excluded from the funnel denominator.
+
+The user window reuses the same ordered-chain SQL as session funnels; only the input population/window changes. Events can belong to different or missing sessions. A purchase after the deadline cannot complete the funnel, and an earlier purchase does not prevent a later valid chain. Primary `<=` and strict `<` timestamp rules are retained.
+
+Across the full observed first-view history, 1,529,295 users have complete windows. Of these, 283,387 have a qualifying cart and 68,921 complete the chain: 18.5306% view→cart, 24.3205% cart→purchase, and 4.5067% view→purchase. There are 70,880 users with any purchase inside the window; 1,959 lack a complete ordered chain. Excluded from the view-entry denominator are 41,604 users without a view and 68,459 with incomplete windows.
+
+The user table covers 1,639,358 observed users. Among complete-window first-view users, 89,391 have an earlier recorded activity and 2,850 have an earlier purchase. This is a first-observed-view journey, not a confirmed first-ever purchase journey. It is also not the seven-day post-cart baseline required for the proposed experiment.
+
+The primary entry cohort starts on November 1, 2019, after the October reference period: 1,140,964 mature first-view users, 169,884 qualifying carts, and 49,385 full chains. The step rates are 14.8895% and 29.0698%; overall view-to-purchase is 4.3284%. Another 388,331 first-view users entered before November and do not re-enter at a later view. The all-mature population above remains a separate sensitivity summary. This entry restriction applies to the user funnel and cart-segment analysis; the full-history episode diagnostics retain October.
+
 ## Cohorts and complete follow-up
 
 For each horizon H, require `first_purchase_time + H <= verified_observation_end` before constructing either the numerator or denominator. A verified end must reflect continuous source coverage, not simply the latest timestamp in a file.
@@ -109,11 +123,19 @@ Customer mix, seasonality, unknown discounts, and missing acquisition costs prev
 
 ## Segments and statistical comparisons
 
-Primary comparisons are new/returning observed visitors and price segments. Price bands will be defined from the first valid cart-event price in a pre-promotion reference period and then frozen. Do not define conversion segments using future purchase outcomes.
+The following definitions were accepted on November 15, 2026. The segment unit is a cart episode starting in `[2019-11-01, 2020-03-01)` UTC. Its outcome is at least one purchase at/after the first cart within that episode, under the configured timestamp rule. This is neither a seven-day post-cart outcome nor item-level conversion: the purchase need not contain the item used to classify entry price. Potentially open episodes remain included and their counts are reported.
 
-Report sample sizes, effect sizes in percentage points, uncertainty intervals, and practical magnitude. Repeated sessions from the same user are dependent: use a user-level summary or bootstrap entire users and recalculate the session metric within each resample. Brand groups may overlap and cannot be added as disjoint customer populations.
+**Visitor status.** An episode is `first_observed` when its start equals the user's first recorded activity across the full source history; otherwise it is `returning`. Sessionless events contribute to that history. Simultaneous first episodes both receive the first-observed label. A user can contribute to both groups on different visits. October provides lookback, not proof that a visitor had never used the store before.
 
-Distinguish prespecified comparisons from exploratory ones. Define a multiple-testing family and correction for exploratory comparisons. Statistical significance does not establish causality or business importance.
+**Entry price.** Use only cart events at the episode's very first cart timestamp. For each unique product at that timestamp, take the median of distinct positive prices, then the median across products. Exact repeated rows therefore do not weight the price. If there is no positive price at that timestamp, assign `Unknown`; do not substitute a later cart or purchase price. This is an entry-item price indicator, not basket value or order value.
+
+**Frozen price bands.** Continuous terciles use October first-cart entry prices only (`[2019-10-01, 2019-11-01)`); no conversion outcomes enter calibration. The 241,594 priced reference episodes give cutpoints **3.00** and **6.03** in source price units. Low is `price <= 3.00`, middle is `3.00 < price <= 6.03`, high is `price > 6.03`; Unknown is separate. Tied prices can produce unequal group sizes. Quantiles are rounded to six decimal places to avoid decimal interpolation truncation at an exact boundary. Expected cutpoints are fixed in configuration; a changed calibration fails the build for review.
+
+**Estimand and clustering.** For segment g, let `Y_ug` count converted episodes and `N_ug` count cart episodes for user u. The estimate is `p_g = SUM(Y_ug) / SUM(N_ug)`, an episode conversion ratio, rather than a mean of individual user rates. Its user influence is `a_ug = (Y_ug - p_g*N_ug) / SUM(N_ug)`. The estimated variance is `G/(G-1) * SUM(a_ug^2)` over G users present in the segment. The delta-method approach follows [Deng, Knoblich and Lu (2018)](https://arxiv.org/abs/1803.06336).
+
+Report two-sided normal 95% intervals for descriptive segment rates. The two prespecified contrasts are **returning minus first_observed** and **high minus low price**, expressed in percentage points. For each difference, align users across both groups (zero counts when absent), use influence `a_uB - a_uA`, and apply the same variance correction over their union. This retains covariance for users in both groups. With family alpha 0.05 and two comparisons, Bonferroni gives a **97.5% interval for each contrast** and adjusted p-value `MIN(1, 2*p)`. The pair of contrast intervals has at least 95% simultaneous asymptotic coverage; the descriptive rate intervals are not simultaneous. Middle and Unknown are descriptive only.
+
+The approximation assumes independent user clusters and sufficiently many non-dominant clusters. Report the largest user's episode share as a diagnostic. Empty groups, fewer than two clusters, or degenerate variance do not receive a misleading zero-width interval. Normal intervals are not clipped to [0,1]. Shared calendar shocks, changing customer mix, and unmeasured price/product differences are not controlled by clustering. These are observational associations, not treatment effects or proof that price or visitor status causes conversion. Users across price groups may overlap; group user counts cannot be added as distinct people.
 
 ## Revenue scenarios and experiment design
 

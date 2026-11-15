@@ -2,9 +2,9 @@
 
 Product analytics of a cosmetics store: purchase funnel, cart abandonment, and repeat purchases around Black Friday 2019.
 
-**Initial result:** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
+**Funnel result (October–February):** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
 
-**Status: work in progress.** Event staging, 30-minute episodes, and ordered session funnels are built and validated. Segment comparisons, user-level analysis, cohorts, and business recommendations are pending.
+**Status: work in progress.** Event staging, 30-minute episodes, ordered session/user funnels, and user-clustered segment comparisons are built and validated. Repeat-purchase cohorts, business recommendations, and the dashboard are pending.
 
 ## Business question
 
@@ -48,11 +48,40 @@ All 20,692,840 source rows remain in staging, with duplicate and quality flags. 
 
 The audit found 1,109,098 excess exact-row copies; only 905 are purchases. Their removal changes the positive purchase-price sum by 0.0561%, reported as sensitivity. Missing brands, category labels, nonpositive prices, and long-lived source tokens are documented in the [methodology](docs/methodology.md).
 
+## Seven-day user funnel
+
+Each user enters at their first observed view across the complete source history. The primary entry cohort starts on **November 1, 2019**, after the October reference period. Outcomes can span sessions, up to and including seven days after entry. Only users with a fully observable deadline enter the denominator; earlier users do not re-enter at a later view.
+
+| Ordered stage | Users | Conversion from the previous stage |
+|---|---:|---:|
+| First observed view with complete follow-up | 1,140,964 | — |
+| Cart within the seven-day window | 169,884 | 14.89% |
+| Purchase after that cart, within the same window | 49,385 | 29.07% |
+
+There are 68,459 users whose first-view window is incomplete and 41,604 observed users without a view; neither group is counted as a failed funnel conversion. The result describes the first observed view cohort, not confirmed new customers. Its population, unit, and horizon differ from the episode funnel, so the conversion rates do not measure a causal benefit of a longer window.
+
+Overall seven-day view-to-purchase conversion is **4.33%**. The separate full-history sensitivity includes 1,529,295 mature users and 68,921 full chains (4.51%); the October entry population accounts for the difference.
+
+## Cart conversion by segment
+
+For **807,560 cart episodes starting in November–February**, 99,078 contain a subsequent purchase. Visitor status uses the user's past observed activity, including October. Entry price uses positive prices of unique products at the first cart timestamp; October-only terciles fix the boundaries at **3.00** and **6.03** source units. Missing positive entry prices remain a separate Unknown group.
+
+![Cart conversion by visitor history and frozen entry-price bands, with user-clustered 95% intervals](docs/img/cart_conversion_by_segment.png)
+
+The two planned comparisons use user-clustered analytical intervals, retaining covariance when the same user appears in both groups. Bonferroni correction covers the two comparisons together at family alpha 0.05.
+
+| Planned comparison | Difference | Adjusted contrast interval (97.5%) |
+|---|---:|---:|
+| Returning minus first observed | −0.97 pp | [−1.19, −0.75] pp |
+| High minus low entry price | +4.30 pp | [+4.07, +4.53] pp |
+
+These associations identify questions to investigate; they do not show that raising prices improves conversion or explain why returning visitors convert less often. Group user counts overlap. The 52 potentially open cart episodes remain included. See the [methodology](docs/methodology.md#segments-and-statistical-comparisons) for estimands, price rules, uncertainty assumptions, and limits.
+
 ## Stack
 
-Current: Python 3.12, uv, DuckDB 2.0.0. Dependency versions are recorded in `uv.lock`.
+Current: Python 3.12, uv, DuckDB, NumPy/SciPy for clustered comparisons, and matplotlib for exported figures. Dependency versions are recorded in `uv.lock`.
 
-Planned: scipy/statsmodels for statistics, matplotlib for figures, PostgreSQL and Metabase/Docker Compose for reporting. These components have not been added yet.
+Planned: PostgreSQL and Metabase/Docker Compose for reporting.
 
 ## Documentation
 
@@ -108,10 +137,14 @@ Build staging, then episodes and funnels:
 ```powershell
 uv run --locked python src/build_staging.py
 uv run --locked python src/build_funnel.py
+uv run --locked python src/build_analysis.py
+uv run --locked python src/plot_segments.py
 ```
 
-These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json` and `data/reports/funnel_build.json`. Both builders use validated transactions and record input provenance and table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel tables, so rerun the funnel builder afterwards.
+These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, and `data/reports/user_analysis.json`. The last command exports the figure above from the validated analysis report. The builds use validated transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment tables; a funnel rebuild invalidates cart segments. Rerun downstream analysis and the chart after either rebuild.
 
 The analysis parameters are in `config/analysis.toml`. `episode_events` maps eligible source records to episodes; `episodes` is the primary per-episode view; `session_funnel` stores per-unit results for both session definitions; `funnel_summary` contains counts and rates for both timestamp rules. The original `sessions` table remains the source-key diagnostic baseline.
 
-Both builders have run on the full dataset. Repeat-build, boundary, sequence-order, and rollback cases are covered by synthetic-data tests.
+`users` retains observed activity history even when session keys are missing. `user_funnel` stores fixed-window outcomes and eligibility flags; `user_funnel_summary` separates timestamp rules and entry populations. `cart_entry_prices` and `price_thresholds` establish entry prices and reference-only cutpoints; `cart_segments` stores episode classifications, `cart_segment_users` supplies cluster counts, and `cart_segment_summary` contains reconciled group totals. Statistical estimates and planned contrasts are saved in the analysis JSON report.
+
+All builders have run on the full dataset. The 40 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, and shared-user covariance against hand-computed examples.

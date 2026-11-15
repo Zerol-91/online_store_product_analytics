@@ -7,3 +7,19 @@ end_exclusive_utc = "2020-03-01T00:00:00"
 
 [funnel]
 primary_timestamp_rule = "allow_equal"
+
+[user_funnel]
+horizon_days = 7
+
+[analysis]
+start_utc = "2019-11-01T00:00:00"
+
+[price_reference]
+start_utc = "2019-10-01T00:00:00"
+end_exclusive_utc = "2019-11-01T00:00:00"
+low_upper = 3.00
+middle_upper = 6.03
+
+[inference]
+alpha = 0.05
+planned_comparisons = 2
