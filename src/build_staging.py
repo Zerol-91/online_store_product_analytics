@@ -159,6 +159,8 @@ def build_staging(inputs: list[Path], database: Path, *, memory_limit="1GB", thr
                 [(item["source_file"], item["size_bytes"], item["sha256"], item["row_count"]) for item in manifest])
             connection.execute("DROP VIEW IF EXISTS episodes")
             connection.execute("DROP VIEW IF EXISTS purchase_events")
+            for table in ("experiment_scenarios", "cart_experiment_daily", "cart_experiment_summary", "cart_experiment_users"):
+                connection.execute(f"DROP TABLE IF EXISTS {table}")
             for table in ("monthly_repurchase", "cohort_curves", "cohort_summary", "cohort_memberships",
                           "cohort_definitions", "buyer_outcomes", "buyer_history", "purchase_episodes"):
                 connection.execute(f"DROP TABLE IF EXISTS {table}")

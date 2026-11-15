@@ -24,6 +24,20 @@ middle_upper = 6.03
 alpha = 0.05
 planned_comparisons = 2
 
+[experiment]
+id = "cart_cost_transparency"
+population = "all_period_cart_users"
+horizon_days = 7
+alpha = 0.05
+power = 0.80
+treatment_share = 0.50
+primary_mde_absolute = 0.01
+scenario_uplifts_absolute = [0.0, 0.005, 0.01, 0.02]
+study_budget_days = 28
+minimum_enrollment_days = 14
+scenario_population = 10000
+value_assumption = "constant_value_per_converted_user"
+
 [repurchase]
 horizons_days = [30, 60]
 calendar_month_ages = [1, 2]

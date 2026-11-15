@@ -4,7 +4,9 @@ Product analytics of a cosmetics store: purchase funnel, cart abandonment, and r
 
 **Funnel result (October–February):** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
 
-**Status: work in progress.** Event staging, ordered session/user funnels, segment comparisons, and complete-window repeat-purchase cohorts are built and validated. Revenue scenarios, experiment design, and the dashboard are pending.
+**Recommendation to test:** show the complete cost and available fulfillment conditions in the cart before checkout. A conditional +1 percentage-point conversion scenario corresponds to 3,965.74 additional positive purchase-event price units per 10,000 eligible users, assuming unchanged value per converted user. This is a planning scenario, not observed uplift or profit.
+
+**Status: work in progress.** The analytical models, value scenarios, and prospective experiment design are built and validated. The PostgreSQL/Metabase dashboard and final packaging remain pending; no experiment has been run.
 
 ## Business question
 
@@ -97,6 +99,28 @@ Value is the sum of positive purchase-event prices in source units, **including 
 
 The Black Friday week's observed 60-day repeat rate is below both preceding weeks, with a descriptive 95% interval of **17.03%–18.91%**. Excluding users with overlapping purchase spans changes that cohort's rate by only **0.013 percentage points** (one cohort member removed). Customer mix, seasonality, unknown discounts, and missing costs prevent a causal promotion-effect or ROI conclusion.
 
+## Prospective experiment: post-cart baseline
+
+The selected hypothesis is to show the complete cost and available fulfillment conditions in the cart before checkout, without a discount. The source does not show the existing interface or why users leave; this is a proposed intervention, not an established cause.
+
+The historical baseline enrolls each user once at their first valid cart in November–February, including those with October cart history. Of 292,094 cart users, **277,852 have complete seven-day follow-up**; 72,498 purchase within the window: **26.09%** (descriptive 95% interval **25.93%–26.26%**). The 14,242 incomplete windows are excluded from the rate, not counted as failures. Strict timestamp ordering changes only two conversions.
+
+Mean positive purchase-event value within the window is **10.35 source units per eligible user**, with median zero. Among converted users, the mean is 39.66. These values can include several purchasing episodes and are not average order value. This baseline differs from both the episode conversion and the first-view user funnel.
+
+The planned test uses user-level assignment, 50/50 allocation, one primary outcome, two-sided alpha 0.05, and power 0.80. The selected planning MDE is **+1 percentage point**, from 26.09% to 27.09% (+3.83% relative). It requires **30,643 users per group**, or 61,286 in total. The educational four-week study budget allows 21 enrollment days and seven follow-up days; the historical replay meets that budget. Actual future enrollment must be checked before launch.
+
+| Assumed absolute uplift | Users per group | Full cycle in historical replay | Added positive purchase-event value per 10,000 users |
+|---|---:|---:|---:|
+| +0.5 pp | 121,833 | 105 days | 1,982.87 |
+| **+1 pp: primary** | **30,643** | **28 days** | **3,965.74** |
+| +2 pp | 7,751 | 21 days | 7,931.49 |
+
+![Prospective sample sizes and conditional added purchase-event value for three assumed conversion uplifts](docs/img/experiment_design.png)
+
+The value scenario holds the seven-day positive purchase-event value per converted user at 39.6574 source units. It estimates conditional arithmetic, not realized uplift, recoverable abandoned-cart value, profit, or ROI. The primary MDE is justified by study resources; the dataset cannot identify an economic break-even threshold.
+
+Freeze the planned enrollment and follow-up windows before the experiment. Analyze all eligible assigned users once (intention to treat), including users who do not later see the cart block. Report the effect and its interval; a statistically nonsignificant result is not proof of no useful effect. The proposed tracking and guardrails are described in the [experiment protocol](docs/methodology.md#prospective-protocol-and-conditional-value-scenarios).
+
 ## Stack
 
 Current: Python 3.12, uv, DuckDB, NumPy/SciPy for clustered comparisons, and matplotlib for exported figures. Dependency versions are recorded in `uv.lock`.
@@ -159,11 +183,13 @@ uv run --locked python src/build_staging.py
 uv run --locked python src/build_funnel.py
 uv run --locked python src/build_analysis.py
 uv run --locked python src/build_cohorts.py
+uv run --locked python src/build_experiment.py
 uv run --locked python src/plot_segments.py
 uv run --locked python src/plot_cohorts.py
+uv run --locked python src/plot_experiment.py
 ```
 
-These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, `data/reports/user_analysis.json`, and `data/reports/cohort_analysis.json`. The plotting commands export the figures above from validated reports. The builds use transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment/cohort tables; a funnel rebuild invalidates cart segments and cohorts. Rerun both analysis builders and plots after rebuilding episodes.
+These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, `data/reports/user_analysis.json`, `data/reports/cohort_analysis.json`, and `data/reports/experiment_baseline.json`. The plotting commands export the figures above from validated reports. The builds use transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment/cohort/experiment tables; a funnel rebuild invalidates cart segments and cohorts. Rerun downstream builders and plots after the corresponding upstream rebuild.
 
 The analysis parameters are in `config/analysis.toml`. `episode_events` maps eligible source records to episodes; `episodes` is the primary per-episode view; `session_funnel` stores per-unit results for both session definitions; `funnel_summary` contains counts and rates for both timestamp rules. The original `sessions` table remains the source-key diagnostic baseline.
 
@@ -171,4 +197,6 @@ The analysis parameters are in `config/analysis.toml`. `episode_events` maps eli
 
 `purchase_events` retains purchase records; `purchase_episodes` groups them into order proxies, and `buyer_history` anchors first and strictly later episodes. `buyer_outcomes` stores horizon maturity and outcomes. `cohort_definitions`/`cohort_memberships` define entry groups; `cohort_summary`, `cohort_curves`, and `monthly_repurchase` supply reporting outputs, with counts, values, descriptive intervals, and ambiguity sensitivity in the cohort report.
 
-All builders have run on the full dataset. The 53 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, shared-user covariance, simultaneous purchases, complete follow-up, and calendar versus elapsed-day outcomes.
+`cart_experiment_users` anchors the historical post-cart baseline once per user; `cart_experiment_summary` retains both timestamp rules, and `cart_experiment_daily` counts unique historical enrollments. `experiment_scenarios` preserves the prospective calculations for reporting. The experiment report also records the selected design, budget feasibility, and conditional value assumptions. Rebuild it after staging changes; it does not depend on session or cohort tables.
+
+All builders have run on the full dataset. The 72 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, shared-user covariance, simultaneous purchases, complete follow-up, calendar versus elapsed-day outcomes, and prospective power calculations checked against binomial simulation.
