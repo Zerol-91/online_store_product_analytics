@@ -6,7 +6,7 @@ Product analytics of a cosmetics store: purchase funnel, cart abandonment, and r
 
 **Recommendation to test:** show the complete cost and available fulfillment conditions in the cart before checkout. A conditional +1 percentage-point conversion scenario corresponds to 3,965.74 additional positive purchase-event price units per 10,000 eligible users, assuming unchanged value per converted user. This is a planning scenario, not observed uplift or profit.
 
-**Status: work in progress.** The analytical models, value scenarios, and prospective experiment design are built and validated. The PostgreSQL/Metabase dashboard and final packaging remain pending; no experiment has been run.
+**Status: work in progress.** The analysis, prospective experiment design, local PostgreSQL/Metabase services, and validated reporting export are implemented. Dashboard provisioning and final packaging remain pending; no experiment has been run.
 
 ## Business question
 
@@ -123,9 +123,7 @@ Freeze the planned enrollment and follow-up windows before the experiment. Analy
 
 ## Stack
 
-Current: Python 3.12, uv, DuckDB, NumPy/SciPy for clustered comparisons, and matplotlib for exported figures. Dependency versions are recorded in `uv.lock`.
-
-Planned: PostgreSQL and Metabase/Docker Compose for reporting.
+Python 3.12, uv, DuckDB, NumPy/SciPy, matplotlib, and Psycopg. Python dependency versions are recorded in `uv.lock`. Compose pins PostgreSQL **17.12-bookworm** and Metabase **v0.64.6**, including image digests. The Metabase dashboard is the next implementation stage.
 
 ## Documentation
 
@@ -199,4 +197,40 @@ The analysis parameters are in `config/analysis.toml`. `episode_events` maps eli
 
 `cart_experiment_users` anchors the historical post-cart baseline once per user; `cart_experiment_summary` retains both timestamp rules, and `cart_experiment_daily` counts unique historical enrollments. `experiment_scenarios` preserves the prospective calculations for reporting. The experiment report also records the selected design, budget feasibility, and conditional value assumptions. Rebuild it after staging changes; it does not depend on session or cohort tables.
 
-All builders have run on the full dataset. The 72 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, shared-user covariance, simultaneous purchases, complete follow-up, calendar versus elapsed-day outcomes, and prospective power calculations checked against binomial simulation.
+All builders have run on the full dataset. There are 80 self-contained tests and five additional opt-in PostgreSQL integration tests. They cover analytical boundaries, repeat builds and rollback, prospective power against binomial simulation, reporting types/keys, stale-report rejection, and actual database permissions, numeric precision, and transaction behavior.
+
+## Local PostgreSQL and Metabase services
+
+Start Docker Desktop with the Linux engine, then run:
+
+```powershell
+uv run --locked python src/local_services.py init
+uv run --locked python src/local_services.py config
+uv run --locked python src/local_services.py up
+uv run --locked python src/export_to_postgres.py
+uv run --locked python src/local_services.py status
+```
+
+`init` creates an ignored `.env` with generated credentials and retains an existing configured file. `.env.example` documents the keys without passwords. The helper locates Docker on PATH or in the standard Windows Docker Desktop directory and supplies that directory only to its child process; no system PATH change is required. `up` waits for both service health checks.
+
+The defaults expose PostgreSQL at `127.0.0.1:5433` and Metabase at [localhost:3000](http://localhost:3000). Ports can be changed in `.env`. Both are bound to the local host. Metabase uses the separate `metabase_app` database; analytics are published to `analytics.reporting`. The `analytics_loader` role writes reporting tables, while `analytics_reader` can only read them and cannot connect to the application database. For a later Metabase analytics connection, the container-network host is `postgres`, port `5432`, database `analytics`, and user `analytics_reader`; use the password from the local `.env`.
+
+The services have been started and checked. Metabase currently reaches its application database and exposes a healthy setup screen; analytics connection/dashboard creation will be automated in the next stage. This infrastructure setup does not yet restore dashboard cards.
+
+The export publishes **14 compact tables / 515 rows**, with no raw events or user-level histories. `config/reporting.toml` selects nine calculated DuckDB marts; the other tables preserve segment estimates/contrasts, cohort and experiment intervals, and report metadata. Statistical values come from the existing validated reports; business formulas are not recomputed in PostgreSQL.
+
+Before writing, the exporter verifies 25 source-table fingerprints against those reports. It rejects stale reports, invalid keys, required NULLs, non-finite values, unexpected tables, and oversized exports. All destination tables are replaced in one transaction, with primary keys and exact row-by-row round-trip comparison, including decimal values and incomplete-cohort NULLs. Repeating the command preserves counts and contents. A failure after earlier tables were loaded rolls the entire export back. `data/reports/postgres_export.json` records the published row counts and source digests and stays outside Git.
+
+Run the five live database checks explicitly after starting the services and building the analysis:
+
+```powershell
+$env:RUN_LOCAL_POSTGRES_TESTS = '1'
+uv run --locked python -m unittest discover -s tests -p test_postgres_integration.py -v
+Remove-Item Env:RUN_LOCAL_POSTGRES_TESTS
+```
+
+The default test command skips these five integration checks and runs the self-contained tests without Docker or source CSVs. Local credentials must stay with the existing database volume: the database bootstrap runs only on its first initialization. To stop the project services while retaining their data:
+
+```powershell
+uv run --locked python src/local_services.py stop
+```

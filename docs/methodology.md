@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the analysis definitions and selected prospective experiment. Validated staging, 30-minute episodes, ordered session/user funnels, segment comparisons, repeat-purchase cohorts, conditional value scenarios, and experiment planning are implemented. PostgreSQL/Metabase reporting remains pending; no experiment has been run.
+This document describes the analysis definitions and selected prospective experiment. The analytical models, conditional value scenarios, experiment planning, and validated PostgreSQL reporting export are implemented. Metabase dashboard provisioning remains pending; no experiment has been run.
 
 ## Observation scope
 
@@ -216,5 +216,15 @@ Proposed guardrails include purchase value, checkout errors, cancellations/refun
 The build stores four scenario rows, including the zero reference, in `experiment_scenarios`. Empty or boundary conversion baselines retain an explicit unavailable planning status instead of invented sample sizes. Baseline and scenario tables are committed in the same database transaction; a late planning validation failure restores the previous results.
 
 ## Decision record
+
+### Reporting publication — November 15, 2026
+
+DuckDB remains the calculation source. PostgreSQL receives only selected reporting aggregates and existing statistical outputs; raw events and user-level histories are not exported. `config/reporting.toml` declares the nine analytical source tables and their keys/required fields. Additional exported tables preserve the calculated uncertainty intervals, the two planned contrasts, and source-report settings. This produces fourteen tables in `analytics.reporting`, separate from Metabase's private application database.
+
+Every published source report must have passed its own checks and match the current database's recorded table fingerprints. The exporter verifies 25 source fingerprints, validates source keys and NULL policy, then loads all target tables in one PostgreSQL transaction. Primary keys protect the destination grain. Exact row-by-row comparison after COPY reconciles counts, numerators/denominators, decimal value sums, and immature-outcome NULLs without a second implementation of the analytical formulas. Psycopg's [transactional COPY](https://www.psycopg.org/psycopg3/docs/basic/copy.html) is used for transfer. A late failure rolls back all tables; repeated publication leaves the same snapshot.
+
+Reporting intervals are copied from the existing analysis reports, not recalculated in BI. Horizon populations and timestamp rules remain explicit columns. Cohort families, horizons, and sensitivity populations can overlap, so their rows must not be added as distinct customers or value. Supported BI filters will select the prepared populations; they must not remove follow-up events or average already calculated conversion rates.
+
+The Docker services follow the [Metabase application-database architecture](https://www.metabase.com/docs/latest/installation-and-operation/configuring-application-database): PostgreSQL stores both databases with separate ownership and credentials. `analytics_loader` owns reporting tables; `analytics_reader` receives SELECT only, and the application role cannot open analytics. Image versions/digests are pinned; credentials, volumes, and the application database stay local. Dashboard creation and filter validation are a separate next stage.
 
 When the audit changes a working definition, record the date, evidence, selected policy, affected tables/metrics, and sensitivity checks. Keep the main analysis reproducible from the same input files and configuration.

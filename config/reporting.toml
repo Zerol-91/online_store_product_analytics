@@ -1,0 +1,47 @@
+schema = "reporting"
+max_rows_per_table = 100000
+
+[[tables]]
+name = "funnel_summary"
+key = ["session_definition", "timestamp_rule"]
+required = ["units", "view_units", "cart_units", "full_chain_units", "positive_purchase_value"]
+
+[[tables]]
+name = "user_funnel_summary"
+key = ["population", "timestamp_rule"]
+required = ["view_users", "cart_users", "full_chain_users", "purchase_users"]
+
+[[tables]]
+name = "cart_segment_summary"
+key = ["family", "segment"]
+required = ["users", "episodes", "conversions", "open_episodes", "conversion_rate"]
+
+[[tables]]
+name = "cohort_summary"
+key = ["cohort_id", "horizon_days", "population"]
+required = ["cohort_users", "eligible_users", "entry_start_utc", "entry_end_exclusive_utc"]
+
+[[tables]]
+name = "cohort_curves"
+key = ["cohort_id", "day"]
+required = ["eligible_users"]
+
+[[tables]]
+name = "monthly_repurchase"
+key = ["cohort_id", "month_age"]
+required = ["cohort_users", "has_complete_month"]
+
+[[tables]]
+name = "cart_experiment_summary"
+key = ["timestamp_rule"]
+required = ["eligible_users"]
+
+[[tables]]
+name = "cart_experiment_daily"
+key = ["entry_date_utc"]
+required = ["enrolled_users", "mature_users"]
+
+[[tables]]
+name = "experiment_scenarios"
+key = ["absolute_uplift"]
+required = ["scenario_conversion", "is_primary", "replay_status", "scenario_population"]

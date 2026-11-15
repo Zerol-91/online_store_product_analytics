@@ -1,0 +1,54 @@
+name: online-store-product-analytics
+
+services:
+  postgres:
+    image: postgres:17.12-bookworm@sha256:40865bc877a289da75963d97d72b59633f639fc5af7a4e856bfa3714cae5b536
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Generate .env first}
+      ANALYTICS_LOADER_PASSWORD: ${ANALYTICS_LOADER_PASSWORD:?Generate .env first}
+      ANALYTICS_READER_PASSWORD: ${ANALYTICS_READER_PASSWORD:?Generate .env first}
+      METABASE_DB_PASSWORD: ${METABASE_DB_PASSWORD:?Generate .env first}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    mem_limit: 768m
+
+  metabase:
+    image: metabase/metabase:v0.64.6@sha256:c6adf07ed118da0ec2aef96622a3e0b10595727b700af7686201fd8ea4c00c52
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: "5432"
+      MB_DB_DBNAME: metabase_app
+      MB_DB_USER: metabase_app
+      MB_DB_PASS: ${METABASE_DB_PASSWORD:?Generate .env first}
+      MB_ENCRYPTION_SECRET_KEY: ${METABASE_ENCRYPTION_SECRET_KEY:?Generate .env first}
+      JAVA_TIMEZONE: UTC
+      JAVA_OPTS: "-Xms128m -Xmx768m"
+      MB_ANON_TRACKING_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${METABASE_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 120s
+      retries: 18
+    mem_limit: 1536m
+
+volumes:
+  postgres_data:
