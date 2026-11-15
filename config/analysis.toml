@@ -23,3 +23,42 @@ middle_upper = 6.03
 [inference]
 alpha = 0.05
 planned_comparisons = 2
+
+[repurchase]
+horizons_days = [30, 60]
+calendar_month_ages = [1, 2]
+
+[[purchase_cohorts]]
+id = "baseline_nov11"
+label = "Nov 11–17"
+family = "calendar_week"
+start_utc = "2019-11-11T00:00:00"
+end_exclusive_utc = "2019-11-18T00:00:00"
+
+[[purchase_cohorts]]
+id = "baseline_nov18"
+label = "Nov 18–24"
+family = "calendar_week"
+start_utc = "2019-11-18T00:00:00"
+end_exclusive_utc = "2019-11-25T00:00:00"
+
+[[purchase_cohorts]]
+id = "black_friday_week"
+label = "Nov 25–Dec 1"
+family = "calendar_week"
+start_utc = "2019-11-25T00:00:00"
+end_exclusive_utc = "2019-12-02T00:00:00"
+
+[[purchase_cohorts]]
+id = "post_black_friday"
+label = "Dec 2–8"
+family = "calendar_week"
+start_utc = "2019-12-02T00:00:00"
+end_exclusive_utc = "2019-12-09T00:00:00"
+
+[[purchase_cohorts]]
+id = "black_friday_day"
+label = "Nov 29 only"
+family = "day_sensitivity"
+start_utc = "2019-11-29T00:00:00"
+end_exclusive_utc = "2019-11-30T00:00:00"

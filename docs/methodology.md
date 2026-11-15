@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the working analysis design. Validated staging, 30-minute episodes, ordered session/user funnels, and user-clustered segment comparisons are implemented. Purchase cohorts and experiment calculations are pending.
+This document describes the working analysis design. Validated staging, 30-minute episodes, ordered session/user funnels, segment comparisons, and repeat-purchase cohorts are implemented. Revenue scenarios and experiment calculations are pending.
 
 ## Observation scope
 
@@ -107,17 +107,43 @@ The primary entry cohort starts on November 1, 2019, after the October reference
 
 ## Cohorts and complete follow-up
 
-For each horizon H, require `first_purchase_time + H <= verified_observation_end` before constructing either the numerator or denominator. A verified end must reflect continuous source coverage, not simply the latest timestamp in a file.
+The first-purchase anchor uses all available October–February purchase history. Primary cohorts start in November; an October purchaser who buys in November does not enter a November first-purchase cohort. These are first **observed** purchasers, not confirmed first-ever customers.
 
-Repeat purchase requires a distinct purchase-session proxy with a later timestamp. Repeated purchase rows within the first session do not qualify. Same-time purchases require a separate audit.
+### Purchase-proxy audit and selected policy — November 15, 2026
 
-Calendar-month M1/M2 repurchase rates and cumulative 30/60-day repeat rates are different metrics and will be labeled separately. Incomplete cohort cells are NA, not zero. Direct 30-versus-60-day comparisons use a common population with 60 complete days.
+There are 1,287,007 purchase-event rows in 157,595 purchasing episodes, covering 110,518 observed purchasers. Their positive event-price sum reconciles to 6,351,830.29 source units. No purchase event lacks session eligibility in this dataset; the cohort build stops if a future source contains uncovered purchases, rather than silently shifting the first-purchase anchor.
+
+There are 1,683 episodes with multiple purchase timestamps; the largest first-to-last purchase span is 8,080 seconds. Several item rows, exact repeated rows, or later purchase timestamps **within the same episode do not count as repeat orders**. Across different episodes there are five simultaneous-start groups (11 episodes), including one user with two initial episodes. Nine episodes overlap or tie earlier purchase spans, affecting eight users. There are also 793 successive episode-start pairs separated by at most 30 minutes. Without order IDs, separate tokens may still represent one real checkout.
+
+**Accepted policy:** keep the selected episode definition without merging across tokens. Anchor each buyer at the earliest purchase timestamp. A repeat requires another purchasing episode whose **first purchase timestamp is strictly later** than that anchor. Episodes starting simultaneously with the initial purchase are not repeats; no arbitrary token chooses which is the first order. A distinct episode can count as a repeat while an earlier episode is still active; the sensitivity population excludes all eight users with overlapping/tied purchase spans. This is a purchase-episode proxy, not a validated count of orders.
+
+### Elapsed-day outcomes and complete follow-up
+
+For horizon H, use the inclusive window `[first_purchase, first_purchase + H days]`. Because observation ends at an exclusive timestamp, eligibility requires `first_purchase + H days < observation_end_exclusive`. A deadline equal to March 1, 2020 00:00 UTC is incomplete. The verified boundary comes from the source-coverage audit, not simply the latest event timestamp. Repeated flags and value outcomes remain NULL for incomplete windows.
+
+`buyer_outcomes` retains one row per buyer/horizon. `horizon_mature` uses everyone mature at that horizon and is a diagnostic population; late entry cohorts may be only partially mature. **Primary 30/60-day comparisons and cumulative curves use `common_horizon`: the same users with complete 60-day follow-up for both horizons.** `common_horizon_no_overlap` adds the eight-user ambiguity exclusion. Each summary reports the full cohort size and eligible denominator separately. A zero eligible denominator produces no rate, rather than zero conversion.
+
+The cumulative curve at day d counts users with their first qualifying repeat no later than `first_purchase + d days`, divided by the fixed 60-day-mature population. Repeat at the deadline is included, and day zero is zero by the strict repeat rule.
+
+Observed value is the sum of **positive purchase-event prices**, preserving the agreed duplicate policy. Total value per eligible user includes the initial purchase; repeat value per eligible user includes only episodes beginning strictly after the first-purchase anchor and includes zero for non-repeaters. Both sums use actual event timestamps inside the outcome window. An episode crossing a deadline does not contribute its entire value early. Simultaneous initial episodes contribute to total value, not repeat value. Report means and medians; these are source price units, not confirmed revenue, profit, or ROI.
+
+### Calendar M1/M2
+
+Calendar-month repurchase is a separate metric. For a first-purchase month C, M1 and M2 count distinct cohort users with a qualifying repeat episode starting in calendar month C+1 or C+2; the denominator is the full cohort size. This is not a cumulative 30/60-day measure. A target month is complete when its exclusive end is at or before the observation boundary. Incomplete cells are NA. For example, January M1 (February) is complete, while January M2 (March) is not.
+
+### Descriptive uncertainty
+
+Each cohort/horizon has one binary outcome per eligible user. Descriptive normal 95% intervals reuse the user-clustered ratio implementation with one observation per user. Counts uniquely determine these marginal intervals; zero-variance and empty cases retain their explicit inference status. The curve shows endpoint intervals only, not a simultaneous confidence band. These observational cohort comparisons are descriptive: no new hypothesis tests or causal effect estimates are introduced, and they do not extend the earlier two-contrast segment-testing family. Calendar shocks and changing customer mix remain limitations.
 
 ## Black Friday comparison
 
 The main first-observed-purchase cohort uses the half-open interval `[2019-11-25, 2019-12-02)` UTC. Baselines are `[2019-11-11, 2019-11-18)` and `[2019-11-18, 2019-11-25)`; `[2019-12-02, 2019-12-09)` is an additional comparison. A November 29-only cohort provides a sensitivity check.
 
 These are calendar cohorts, not verified promotion exposures. All groups use the same lookback rules and complete follow-up horizons. Report cohort sizes, repeat-purchase rates, and observed purchase value per cohort member over the same window, stating whether the initial purchase is included.
+
+The November 29-only sensitivity overlaps the Black Friday week and must not be added to it. Main weekly cohorts are disjoint and use the common 60-day-mature population for both 30- and 60-day results. The configured windows, horizons, and calendar ages are recorded in `config/analysis.toml`.
+
+Monthly and weekly memberships also overlap. Do not sum summary rows across cohort families, horizons, or maturity populations as distinct users or purchase value.
 
 Customer mix, seasonality, unknown discounts, and missing acquisition costs prevent a causal ROI claim. December trends can be described; displacement of December demand cannot be established from this comparison alone.
 

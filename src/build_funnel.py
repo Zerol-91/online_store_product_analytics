@@ -144,6 +144,10 @@ def build_funnel(database, config=ROOT / "config/analysis.toml", *, memory_limit
             fingerprints = {table: str(connection.execute(f"SELECT BIT_XOR(HASH(t)) FROM {table} t").fetchone()[0])
                             for table in ("episode_events", "session_funnel", "funnel_summary")}
             sources = query_rows(connection, "SELECT * FROM source_files ORDER BY source_file")
+            connection.execute("DROP VIEW IF EXISTS purchase_events")
+            for table in ("monthly_repurchase", "cohort_curves", "cohort_summary", "cohort_memberships",
+                          "cohort_definitions", "buyer_outcomes", "buyer_history", "purchase_episodes"):
+                connection.execute(f"DROP TABLE IF EXISTS {table}")
             for table in ("cart_segment_summary", "cart_segment_users", "cart_segments", "price_thresholds", "cart_entry_prices"):
                 connection.execute(f"DROP TABLE IF EXISTS {table}")
             connection.execute("COMMIT")

@@ -158,6 +158,10 @@ def build_staging(inputs: list[Path], database: Path, *, memory_limit="1GB", thr
             connection.executemany("INSERT INTO source_files VALUES (?, ?, ?, ?)",
                 [(item["source_file"], item["size_bytes"], item["sha256"], item["row_count"]) for item in manifest])
             connection.execute("DROP VIEW IF EXISTS episodes")
+            connection.execute("DROP VIEW IF EXISTS purchase_events")
+            for table in ("monthly_repurchase", "cohort_curves", "cohort_summary", "cohort_memberships",
+                          "cohort_definitions", "buyer_outcomes", "buyer_history", "purchase_episodes"):
+                connection.execute(f"DROP TABLE IF EXISTS {table}")
             for table in ("cart_segment_summary", "cart_segment_users", "cart_segments", "price_thresholds", "cart_entry_prices",
                           "user_funnel_summary", "user_funnel", "users",
                           "funnel_summary", "session_funnel", "episode_events"):

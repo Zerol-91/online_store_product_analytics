@@ -4,7 +4,7 @@ Product analytics of a cosmetics store: purchase funnel, cart abandonment, and r
 
 **Funnel result (October–February):** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
 
-**Status: work in progress.** Event staging, 30-minute episodes, ordered session/user funnels, and user-clustered segment comparisons are built and validated. Repeat-purchase cohorts, business recommendations, and the dashboard are pending.
+**Status: work in progress.** Event staging, ordered session/user funnels, segment comparisons, and complete-window repeat-purchase cohorts are built and validated. Revenue scenarios, experiment design, and the dashboard are pending.
 
 ## Business question
 
@@ -24,7 +24,7 @@ A second question examines whether customers whose first observed purchase occur
 
 [eCommerce Events History in Cosmetics Shop](https://www.kaggle.com/datasets/mkechinov/ecommerce-events-history-in-cosmetics-shop), published by Michael Kechinov / REES46 on Kaggle. The five source files cover October 2019–February 2020, as verified during the input audit. Dataset terms remain those specified by the publisher on Kaggle.
 
-Raw data is not included in this repository. The event schema has no order ID, confirmed item quantity, acquisition cost, or cost of goods. Purchase sessions will therefore be treated as order proxies, subject to validation. Abandoned-cart value is not equivalent to recoverable revenue, and observational cohort differences do not establish a causal promotion effect.
+Raw data is not included in this repository. The event schema has no order ID, confirmed item quantity, acquisition cost, or cost of goods. Purchasing episodes are therefore operational order proxies, with ambiguity and sensitivity checks documented below. Abandoned-cart value is not equivalent to recoverable revenue, and observational cohort differences do not establish a causal promotion effect.
 
 ## Ordered funnel
 
@@ -76,6 +76,26 @@ The two planned comparisons use user-clustered analytical intervals, retaining c
 | High minus low entry price | +4.30 pp | [+4.07, +4.53] pp |
 
 These associations identify questions to investigate; they do not show that raising prices improves conversion or explain why returning visitors convert less often. Group user counts overlap. The 52 potentially open cart episodes remain included. See the [methodology](docs/methodology.md#segments-and-statistical-comparisons) for estimands, price rules, uncertainty assumptions, and limits.
+
+## Repeat purchases and Black Friday
+
+A repeat purchase requires a **different purchasing episode beginning strictly after the user's first observed purchase**. Multiple item rows, duplicates, and later purchase rows within the initial episode are not repeat orders. October purchasers do not re-enter later first-purchase cohorts.
+
+The main 30/60-day comparison uses the **same users with complete 60-day follow-up**. The November first-purchase cohort has 14.60% repeat purchase by day 30 and 20.25% by day 60 (n=26,761); December has 10.29% and 15.91% (n=19,702). January and February have no complete 60-day windows and receive no primary 60-day rate.
+
+![Cumulative repeat purchase for four weekly cohorts on fixed mature populations, and calendar M1/M2 repurchase with incomplete cells marked NA](docs/img/repeat_purchase_cohorts.png)
+
+| First observed purchase | Users | Repeat by 30d | Repeat by 60d | 60d value/user: mean | Median |
+|---|---:|---:|---:|---:|---:|
+| Nov 11–17 | 5,056 | 15.59% | 21.04% | 51.48 | 32.39 |
+| Nov 18–24 | 7,894 | 13.19% | 18.76% | 52.27 | 34.98 |
+| Nov 25–Dec 1: Black Friday week | 6,415 | 12.46% | 17.97% | 48.27 | 32.43 |
+| Dec 2–8 | 4,520 | 10.46% | 16.68% | 47.19 | 29.83 |
+| Nov 29 only: sensitivity | 1,468 | 10.42% | 16.62% | 46.17 | 32.81 |
+
+Value is the sum of positive purchase-event prices in source units, **including the initial purchase**, per eligible buyer. It is not confirmed net sales or profit. The November 29 sensitivity overlaps Black Friday week and cannot be added to it. Calendar M1/M2 cells count repurchase in separate calendar months; they are not cumulative 30/60-day rates.
+
+The Black Friday week's observed 60-day repeat rate is below both preceding weeks, with a descriptive 95% interval of **17.03%–18.91%**. Excluding users with overlapping purchase spans changes that cohort's rate by only **0.013 percentage points** (one cohort member removed). Customer mix, seasonality, unknown discounts, and missing costs prevent a causal promotion-effect or ROI conclusion.
 
 ## Stack
 
@@ -138,13 +158,17 @@ Build staging, then episodes and funnels:
 uv run --locked python src/build_staging.py
 uv run --locked python src/build_funnel.py
 uv run --locked python src/build_analysis.py
+uv run --locked python src/build_cohorts.py
 uv run --locked python src/plot_segments.py
+uv run --locked python src/plot_cohorts.py
 ```
 
-These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, and `data/reports/user_analysis.json`. The last command exports the figure above from the validated analysis report. The builds use validated transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment tables; a funnel rebuild invalidates cart segments. Rerun downstream analysis and the chart after either rebuild.
+These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, `data/reports/user_analysis.json`, and `data/reports/cohort_analysis.json`. The plotting commands export the figures above from validated reports. The builds use transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment/cohort tables; a funnel rebuild invalidates cart segments and cohorts. Rerun both analysis builders and plots after rebuilding episodes.
 
 The analysis parameters are in `config/analysis.toml`. `episode_events` maps eligible source records to episodes; `episodes` is the primary per-episode view; `session_funnel` stores per-unit results for both session definitions; `funnel_summary` contains counts and rates for both timestamp rules. The original `sessions` table remains the source-key diagnostic baseline.
 
 `users` retains observed activity history even when session keys are missing. `user_funnel` stores fixed-window outcomes and eligibility flags; `user_funnel_summary` separates timestamp rules and entry populations. `cart_entry_prices` and `price_thresholds` establish entry prices and reference-only cutpoints; `cart_segments` stores episode classifications, `cart_segment_users` supplies cluster counts, and `cart_segment_summary` contains reconciled group totals. Statistical estimates and planned contrasts are saved in the analysis JSON report.
 
-All builders have run on the full dataset. The 40 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, and shared-user covariance against hand-computed examples.
+`purchase_events` retains purchase records; `purchase_episodes` groups them into order proxies, and `buyer_history` anchors first and strictly later episodes. `buyer_outcomes` stores horizon maturity and outcomes. `cohort_definitions`/`cohort_memberships` define entry groups; `cohort_summary`, `cohort_curves`, and `monthly_repurchase` supply reporting outputs, with counts, values, descriptive intervals, and ambiguity sensitivity in the cohort report.
+
+All builders have run on the full dataset. The 53 tests cover repeat builds, boundaries, sequence order, rollback, frozen price calibration, shared-user covariance, simultaneous purchases, complete follow-up, and calendar versus elapsed-day outcomes.
