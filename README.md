@@ -70,9 +70,9 @@ The analysis covers **807,560 cart episodes entering November–February**. Visi
 | Returning − first observed | 12.04% vs 13.01% | −0.97 pp | [−1.19, −0.75] pp |
 | High − low entry price | 14.95% vs 10.66% | +4.30 pp | [+4.07, +4.53] pp |
 
-![Cart conversion with descriptive user-clustered 95% intervals](docs/img/cart_conversion_by_segment.png)
+![Metabase: cart conversion bar charts, segment denominators and uncertainty tables](docs/img/dashboard_segments.png)
 
-Repeated episodes from one user are not independent. Analytical user-clustered intervals retain covariance for users in both groups; Bonferroni correction covers the two planned contrasts. The figure shows descriptive **95% intervals for individual rates**; the table shows adjusted **97.5% intervals for differences**.
+Repeated episodes from one user are not independent. Analytical user-clustered intervals retain covariance for users in both groups; Bonferroni correction covers the two planned contrasts. The dashboard shows descriptive **95% intervals for individual rates in its supporting table**; the comparison table above shows adjusted **97.5% intervals for differences**. [Open the screenshot at full resolution](docs/img/dashboard_segments.png).
 
 ### 4. Repeat purchases and Black Friday cohorts
 
@@ -87,9 +87,9 @@ Both horizons use the **same buyers with complete 60-day follow-up**:
 | **Nov 25–Dec 1: Black Friday week** | **6,415** | **12.46%** | **17.97%** |
 | Dec 2–8 | 4,520 | 10.46% | 16.68% |
 
-![Cumulative repeat purchase and calendar-month repurchasing, with unavailable follow-up marked NA](docs/img/repeat_purchase_cohorts.png)
+![Metabase: calendar-month repurchasing, cumulative weekly repeat curves and descriptive interval table](docs/img/dashboard_cohorts.png)
 
-The BF-week 60-day rate has a descriptive 95% interval of **17.03%–18.91%**. Calendar M1/M2 count repurchases in separate later calendar months, not cumulative 30/60-day outcomes. Incomplete cells remain NA.
+The BF-week 60-day rate has a descriptive 95% interval of **17.03%–18.91%**, shown in the dashboard's supporting table rather than on the lines. Calendar M1/M2 count repurchases in separate later calendar months, not cumulative 30/60-day outcomes. Incomplete cells remain NULL, with explicit NA follow-up labels. [Open the screenshot at full resolution](docs/img/dashboard_cohorts.png).
 
 ### 5. Experiment planning and conditional value
 
@@ -109,7 +109,7 @@ For the monetary scenario, assume unchanged seven-day positive purchase-event va
 
 `10,000 eligible users × 0.01 uplift × 39.6574 value per converted user = 3,965.74 source units`
 
-The conditional mean can include several purchasing episodes; it is not average order value. See [sample-size/value sensitivity](docs/img/experiment_design.png) and the [prospective protocol](docs/methodology.md#prospective-protocol-and-conditional-value-scenarios).
+The conditional mean can include several purchasing episodes; it is not average order value. See the [experiment-planning dashboard](docs/img/dashboard_experiment.png) for sample-size/value sensitivity and the [prospective protocol](docs/methodology.md#prospective-protocol-and-conditional-value-scenarios) for definitions.
 
 ## Dashboard
 
