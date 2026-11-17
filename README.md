@@ -30,6 +30,8 @@ A cosmetics store records views, cart actions, and purchases, but those events d
 
 ## Approach
 
+The executed [analysis notebook](notebooks/analysis.ipynb) walks through the findings using prepared marts and validated statistical reports. It does not rebuild the source or duplicate business formulas.
+
 ```mermaid
 flowchart LR
     A["5 CSV files<br/>20.7M events"] --> B["DuckDB staging<br/>quality flags"]
@@ -141,6 +143,7 @@ PostgreSQL receives **14 tables / 515 aggregate rows**, with no raw events or us
 ```text
 sql/                 staging, analytical marts and reporting queries
 src/                 builders, statistics, experiment planning and BI scripts
+notebooks/           executed read-only review of the prepared analysis
 config/              agreed analytical parameters and reporting whitelist
 metabase/            dashboard layout and SQL questions
 tests/               analytical fixtures and opt-in service integration checks
@@ -176,31 +179,25 @@ Download the dataset from Kaggle, sign in if required, and extract these five fi
 2020-Feb.csv
 ```
 
-Audit all inputs, including read-only duplicate sensitivity:
-
-```powershell
-foreach ($month in @('2019-Oct', '2019-Nov', '2019-Dec', '2020-Jan', '2020-Feb')) {
-    uv run --locked python src/audit_data.py --input "data/raw/$month.csv" --duplicates
-    if ($LASTEXITCODE -ne 0) { throw "Audit failed: $month" }
-}
-```
-
 ### Build analysis
 
-Run in order; stop and resolve any failed command before proceeding:
+Run the complete analytical pipeline:
 
 ```powershell
-uv run --locked python src/build_staging.py
-uv run --locked python src/build_funnel.py
-uv run --locked python src/build_analysis.py
-uv run --locked python src/build_cohorts.py
-uv run --locked python src/build_experiment.py
-uv run --locked python src/plot_segments.py
-uv run --locked python src/plot_cohorts.py
-uv run --locked python src/plot_experiment.py
+uv run --locked python src/run_pipeline.py
 ```
 
-Outputs: `data/processed/shop.duckdb`, validated JSON reports in `data/reports/`, and figures in `docs/img/`. The default DuckDB limit is 1 GB and two threads. Rebuilding upstream invalidates dependent marts; rerun downstream stages in the order above. Business formulas are implemented once and reused by reporting.
+The command audits all five files with read-only duplicate sensitivity, then runs staging, funnels, segments, cohorts, experiment planning, and three figure exports. It stops at the first failure; completed stages remain, and dependent marts must be rebuilt before use. The existing individual builders remain available in `src/`.
+
+Outputs: `data/processed/shop.duckdb`, validated JSON reports plus `pipeline_build.json` in `data/reports/`, and figures in `docs/img/`. The default DuckDB limit is 1 GB and two threads. Optional `--input-dir`, `--database`, `--reports-dir`, and `--figures-dir` support an isolated rebuild without overwriting existing results. Business formulas are implemented once and reused by reporting.
+
+Execute the read-only notebook after the build:
+
+```powershell
+uv run --locked python src/execute_notebook.py
+```
+
+This uses the current project interpreter, validates the report fingerprints against DuckDB, and saves aggregate outputs in `notebooks/analysis.ipynb`. Jupyter execution dependencies are development dependencies installed by the default `uv sync --locked`; a separate Jupyter server is not required.
 
 ### Start and populate BI
 
@@ -242,7 +239,7 @@ uv run --locked python src/local_services.py stop
 
 ## Validation
 
-The latest verified suite passed **95 tests**: 88 self-contained tests and seven opt-in PostgreSQL/Metabase integration tests. Checks cover event ordering, duplicate/price policies, boundary windows, overlapping users, repeat purchases, power calculations, repeat builds, and transactional rollback. Metabase results match PostgreSQL across **21 query/filter cases**; restoration into a separate empty application database was verified. Dashboard text was checked at 1366, 1600, and 1920 pixels.
+The latest verified suite passed **98 tests**: 91 self-contained tests and seven opt-in PostgreSQL/Metabase integration tests. Checks cover event ordering, duplicate/price policies, boundary windows, overlapping users, repeat purchases, power calculations, repeat builds, pipeline failure handling, and transactional rollback. Metabase results match PostgreSQL across **21 query/filter cases**; restoration into a separate empty application database was verified. Dashboard text was checked at 1366, 1600, and 1920 pixels.
 
 Run the self-contained suite without source CSVs or services:
 
@@ -267,7 +264,7 @@ try {
 
 </details>
 
-The analytical models and local dashboard are implemented. Final acceptance of the complete reproduction workflow remains pending.
+A clean source copy with a fresh environment and database reproduced the analytical reports and all three figure files. The notebook, PostgreSQL export, and Metabase restoration were executed and validated; [reproduction notes](docs/methodology.md#reproduction-workflow) document the numerical checks.
 
 ## Author
 

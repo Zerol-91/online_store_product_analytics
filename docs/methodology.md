@@ -239,4 +239,14 @@ The compact layout groups each KPI with its relevant population rather than pres
 
 Provisioning first compares PostgreSQL contents with the current validated DuckDB/report outputs. Saved-question and dashboard API results are then checked against PostgreSQL in 21 population/filter cases, preserving incomplete outcomes. Repeated provisioning must retain object/layout IDs and unrelated sample content. A separate initially empty application database verifies restoration without publishing or replacing the author's private application database. Browser checks and screenshot capture exercise the actual Metabase visualizations with explicit primary filters, independent of last-used user selections.
 
+### Reproduction workflow
+
+`src/run_pipeline.py` runs five read-only source audits, the five existing analytical builders, and three figure exports in dependency order. Each builder retains its own validation and transaction boundaries; the entire pipeline is not one transaction. A failed stage stops downstream execution and records the failure in `data/reports/pipeline_build.json`. Completed outputs may remain after a failure, so rebuild the dependent stages before using them. Separate output paths support an isolated reconstruction while retaining the original CSVs and current database.
+
+`notebooks/analysis.ipynb` is a read-only review of prepared marts and the existing statistical reports. It verifies those reports against the current table fingerprints before presenting aggregate results; it neither imports raw events nor implements another statistical model. `src/execute_notebook.py` executes it with the current project interpreter and saves outputs only after successful completion. Notebook execution dependencies are optional development dependencies; the analytical pipeline does not require a Jupyter server.
+
+PostgreSQL publication and Metabase provisioning remain explicit commands after analytical validation. They preserve their existing snapshot checks, transactional export, read-only BI connection, and population/filter comparisons.
+
+Independent builds can differ in the last floating-point bits of parallel reductions. The final isolated rebuild preserved all counts, exact decimal sums, decisions, and figure bytes; only the two seven-day value standard deviations differed, by at most 1.82e-13. Analytical report comparisons used absolute and relative tolerances of 1e-12 for floating values and exact equality otherwise, excluding run timestamps. Fingerprints validate each report against its own database snapshot; they do not promise identical floating-point bits between independent builds. PostgreSQL export still requires exact round-trip equality with the snapshot being published.
+
 When the audit changes a working definition, record the date, evidence, selected policy, affected tables/metrics, and sensitivity checks. Keep the main analysis reproducible from the same input files and configuration.
