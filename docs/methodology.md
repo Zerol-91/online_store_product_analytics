@@ -1,6 +1,6 @@
 # Methodology
 
-This document describes the analysis definitions and selected prospective experiment. The analytical models, conditional value scenarios, experiment planning, and validated PostgreSQL reporting export are implemented. Metabase dashboard provisioning remains pending; no experiment has been run.
+This document describes the analysis definitions and selected prospective experiment. The analytical models, conditional value scenarios, experiment planning, validated PostgreSQL reporting export, and reproducible Metabase dashboard are implemented; no experiment has been run.
 
 ## Observation scope
 
@@ -225,6 +225,18 @@ Every published source report must have passed its own checks and match the curr
 
 Reporting intervals are copied from the existing analysis reports, not recalculated in BI. Horizon populations and timestamp rules remain explicit columns. Cohort families, horizons, and sensitivity populations can overlap, so their rows must not be added as distinct customers or value. Supported BI filters will select the prepared populations; they must not remove follow-up events or average already calculated conversion rates.
 
-The Docker services follow the [Metabase application-database architecture](https://www.metabase.com/docs/latest/installation-and-operation/configuring-application-database): PostgreSQL stores both databases with separate ownership and credentials. `analytics_loader` owns reporting tables; `analytics_reader` receives SELECT only, and the application role cannot open analytics. Image versions/digests are pinned; credentials, volumes, and the application database stay local. Dashboard creation and filter validation are a separate next stage.
+The Docker services follow the [Metabase application-database architecture](https://www.metabase.com/docs/latest/installation-and-operation/configuring-application-database): PostgreSQL stores both databases with separate ownership and credentials. `analytics_loader` owns reporting tables; `analytics_reader` receives SELECT only, and the application role cannot open analytics. Image versions/digests are pinned; credentials, volumes, and the application database stay local.
+
+### Dashboard populations and validation — November 16, 2026
+
+The Metabase dashboard reads fourteen saved SQL questions from the published aggregates. Presentation queries select existing counts/rates/intervals, reshape stages or calendar cells, and express contrasts in percentage points. They do not estimate uncertainty or fit a second statistical model. The calendar matrix uses a common sequential scale; incomplete M1/M2 cells remain NULL/blank and are labeled NA in the explanation. Very small adjusted p-values use scientific notation; numerical underflow is labeled rather than interpreted as an exact zero probability.
+
+The **Episode timestamp rule** filter changes only episode cart conversion, ordered stage counts, and purchase coverage. Both choices retain `episode_30m`; source-key sensitivity remains in the analytical outputs. The **First-purchase month** filter selects a calendar cohort after its full outcomes have been calculated. It affects neither follow-up event inclusion nor the weekly comparison. Segments retain November-onward entry; weekly curves and 30/60-day tables retain the fixed common 60-day-mature bases. The BF-week 30-day KPI explicitly uses that same 60-day base. No arbitrary date filter is offered because the exported session aggregates lack entry-date granularity.
+
+The experimental baseline KPI is user-based with a seven-day window; it must not be compared with episode conversion as an improvement. The +1 pp conditional-value KPI is a prospective scenario per 10,000 eligible users. Dashboard headings distinguish both from observed episode and cohort rates. Existing cohort families and segment populations overlap; their unique-user counts are not summed.
+
+The compact layout groups each KPI with its relevant population rather than presenting episode, cohort, and scenario values as comparable outcomes. Price-chart color series are disjoint presentation columns of the existing segment rate; stacking them does not combine different populations. Calendar follow-up labels distinguish unavailable M1/M2 periods while rate columns remain numeric with NULLs. No analytical population or outcome definition changed during the design revision.
+
+Provisioning first compares PostgreSQL contents with the current validated DuckDB/report outputs. Saved-question and dashboard API results are then checked against PostgreSQL in 21 population/filter cases, preserving incomplete outcomes. Repeated provisioning must retain object/layout IDs and unrelated sample content. A separate initially empty application database verifies restoration without publishing or replacing the author's private application database. Browser checks and screenshot capture exercise the actual Metabase visualizations with explicit primary filters, independent of last-used user selections.
 
 When the audit changes a working definition, record the date, evidence, selected policy, affected tables/metrics, and sensitivity checks. Keep the main analysis reproducible from the same input files and configuration.

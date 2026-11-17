@@ -1,0 +1,301 @@
+{
+  "version": "v0.64.6",
+  "collection": "Cosmetics store analytics",
+  "database": "Cosmetics reporting",
+  "name": "From Cart to Repeat Purchase",
+  "description": "Observed cosmetics-store journeys, repeat purchasing, and a prospective cart experiment. October 2019-February 2020, UTC.",
+  "parameters": [
+    {
+      "id": "episode-order",
+      "name": "Episode timestamp rule",
+      "slug": "episode_order",
+      "type": "string/=",
+      "default": [
+        "allow_equal"
+      ],
+      "values_source_type": "static-list",
+      "values_source_config": {
+        "values": [
+          "allow_equal",
+          "strict"
+        ]
+      }
+    },
+    {
+      "id": "purchase-month",
+      "name": "First-purchase month (calendar table only)",
+      "slug": "purchase_month",
+      "type": "string/=",
+      "values_source_type": "static-list",
+      "values_source_config": {
+        "values": [
+          "2019-11",
+          "2019-12",
+          "2020-01",
+          "2020-02"
+        ]
+      }
+    }
+  ],
+  "cards": [
+    {
+      "key": "episode_conversion",
+      "name": "All-cart episode conversion",
+      "description": "Purchase at/after cart within an observed episode. Denominator: all cart episodes, including those without a prior view. October-February; selected timestamp rule.",
+      "display": "scalar",
+      "percent": [
+        "conversion"
+      ],
+      "filters": {
+        "timestamp_rule": "episode-order"
+      },
+      "row": 2,
+      "col": 0,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "key": "repeat_30d",
+      "name": "BF-week buyers repeating by day 30",
+      "description": "First observed purchase Nov 25-Dec 1. Complete 60-day follow-up base used at both day 30 and day 60. Observational rate.",
+      "display": "scalar",
+      "percent": [
+        "repeat_rate"
+      ],
+      "row": 31,
+      "col": 18,
+      "width": 6,
+      "height": 2
+    },
+    {
+      "key": "experiment_baseline",
+      "name": "7-day cart-user baseline",
+      "description": "72,498 / 277,852 mature users entering at their first eligible cart since November. Different unit and horizon from episode conversion; no treatment observed.",
+      "display": "scalar",
+      "percent": [
+        "conversion"
+      ],
+      "row": 49,
+      "col": 0,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "key": "conditional_value",
+      "name": "Scenario: +1 pp (source units / 10k users)",
+      "description": "Additional positive purchase-event price units, assuming unchanged seven-day value per converted user. Not realized revenue, verified currency, profit, or ROI.",
+      "display": "scalar",
+      "row": 49,
+      "col": 12,
+      "width": 12,
+      "height": 2
+    },
+    {
+      "key": "ordered_funnel",
+      "name": "Recorded views narrow to ordered purchases",
+      "description": "Episode counts; cart must follow a view and purchase must follow that cart. The funnel cart denominator differs from all-cart conversion.",
+      "display": "bar",
+      "dimension": "stage",
+      "metric": "episodes",
+      "horizontal": true,
+      "filters": {
+        "timestamp_rule": "episode-order"
+      },
+      "row": 4,
+      "col": 0,
+      "width": 14,
+      "height": 5
+    },
+    {
+      "key": "purchase_coverage",
+      "name": "Purchases also occur outside the full chain",
+      "description": "Disjoint groups of purchase-containing episodes. Missing full chains do not establish tracking faults or user motives.",
+      "display": "bar",
+      "dimension": "coverage",
+      "metric": "episodes",
+      "horizontal": true,
+      "filters": {
+        "timestamp_rule": "episode-order"
+      },
+      "row": 4,
+      "col": 14,
+      "width": 10,
+      "height": 5
+    },
+    {
+      "key": "visitor_segments",
+      "name": "Conversion by observed visitor history",
+      "description": "Cart episodes entering November-February. First means first observed, not proven new. 95% user-clustered intervals in the table below.",
+      "display": "bar",
+      "dimension": "segment",
+      "metric": "conversion",
+      "percent": [
+        "conversion"
+      ],
+      "horizontal": true,
+      "row": 11,
+      "col": 0,
+      "width": 12,
+      "height": 5,
+      "axis_max": 0.16
+    },
+    {
+      "key": "price_segments",
+      "name": "High-price carts convert more often than low-price carts",
+      "description": "October-frozen price bands: 3.00 and 6.03 source units. Cart-entry price; November-February episodes. Unknown shown separately. Association, not a causal price effect.",
+      "display": "bar",
+      "dimension": "segment",
+      "metric": "conversion",
+      "percent": [
+        "conversion"
+      ],
+      "horizontal": true,
+      "row": 11,
+      "col": 12,
+      "width": 12,
+      "height": 5,
+      "axis_max": 0.16
+    },
+    {
+      "key": "segment_intervals",
+      "name": "Segment denominators and descriptive 95% intervals",
+      "description": "Episode conversion with user-clustered uncertainty. Users can appear in more than one group; do not sum group users as unique people.",
+      "display": "table",
+      "percent": [
+        "conversion",
+        "ci_low",
+        "ci_high"
+      ],
+      "row": 16,
+      "col": 0,
+      "width": 24,
+      "height": 6
+    },
+    {
+      "key": "segment_contrasts",
+      "name": "Two planned contrasts: adjusted uncertainty",
+      "description": "Differences in percentage points. User covariance retained; Bonferroni 97.5% intervals and adjusted p-values for two prespecified comparisons.",
+      "display": "table",
+      "row": 22,
+      "col": 0,
+      "width": 24,
+      "height": 3
+    },
+    {
+      "key": "calendar_cohorts",
+      "name": "Calendar-month repurchasing: M1 and M2",
+      "description": "First observed purchase cohort. M1/M2 are calendar months, not 30/60 elapsed days. Blank/dash cells are NA due to incomplete follow-up, never zero.",
+      "display": "table",
+      "percent": [
+        "m1",
+        "m2"
+      ],
+      "filters": {
+        "first_purchase_month": "purchase-month"
+      },
+      "row": 27,
+      "col": 0,
+      "width": 24,
+      "height": 4
+    },
+    {
+      "key": "weekly_curves",
+      "name": "BF-week 60-day repeats trail earlier November weeks",
+      "description": "Four first-purchase cohorts; fixed complete 60-day populations. Each line is cumulative first repeat by cohort age. No causal promotion effect; pointwise endpoints below are not a confidence band.",
+      "display": "line",
+      "dimension": "day",
+      "breakout": "cohort",
+      "metric": "repeat_rate",
+      "percent": [
+        "repeat_rate"
+      ],
+      "row": 33,
+      "col": 0,
+      "width": 24,
+      "height": 7
+    },
+    {
+      "key": "weekly_intervals",
+      "name": "Weekly cohort sizes and descriptive 95% intervals",
+      "description": "30/60-day outcomes share each cohort's complete 60-day denominator. Intervals copied from the validated analysis, not recalculated in Metabase.",
+      "display": "table",
+      "percent": [
+        "repeat_rate",
+        "ci_low",
+        "ci_high"
+      ],
+      "row": 40,
+      "col": 0,
+      "width": 24,
+      "height": 7
+    },
+    {
+      "key": "scenarios",
+      "name": "Planning sensitivity, not experiment results",
+      "description": "Historical traffic replay includes enrollment plus seven follow-up days. Primary +1 pp plan: 30,643 users/arm, 28 days total. Value assumes unchanged conditional mean; zero reference has no sample-size requirement.",
+      "display": "table",
+      "row": 51,
+      "col": 0,
+      "width": 24,
+      "height": 4
+    }
+  ],
+  "text": [
+    {
+      "key": "decision",
+      "row": 0,
+      "height": 2,
+      "text": "## From cart to repeat purchase\nObserved journeys, customer segments and repeat purchasing. October 2019-February 2020, UTC. **The proposed experiment has not been run.**",
+      "col": 0,
+      "width": 24
+    },
+    {
+      "key": "funnel_heading",
+      "row": 2,
+      "height": 2,
+      "text": "### 1. Most cart episodes end without a later purchase\nAll-cart conversion is measured within an episode. The ordered funnel below additionally requires a prior view. October-February, UTC.",
+      "col": 6,
+      "width": 18
+    },
+    {
+      "key": "segments_heading",
+      "row": 9,
+      "height": 2,
+      "text": "### 2. Cart conversion differs across observed segments\nNovember-February cart episodes; October-frozen price bands. Associations, not causal effects. Counts and user-clustered intervals below.",
+      "col": 0,
+      "width": 24
+    },
+    {
+      "key": "calendar_heading",
+      "row": 25,
+      "height": 2,
+      "text": "### 3. Calendar-month repurchasing\nM1 and M2 are separate calendar months after the first observed purchase. Empty cells mean **NA: follow-up unavailable**, never zero.",
+      "col": 0,
+      "width": 24
+    },
+    {
+      "key": "weekly_heading",
+      "row": 31,
+      "height": 2,
+      "text": "### 4. Black Friday and nearby weeks\nFixed complete 60-day populations. The KPI at right is BF-week repeat by day 30; neither filter changes this comparison.",
+      "col": 0,
+      "width": 18
+    },
+    {
+      "key": "scenario_heading",
+      "row": 47,
+      "height": 2,
+      "text": "### 5. Hypothesis to test: show full cost and fulfillment terms in the cart\nPlan: +1 pp, 30,643 users per arm, 21 enrollment + 7 follow-up days. The value scenario assumes unchanged value among buyers; it is not observed revenue or profit.",
+      "col": 0,
+      "width": 24
+    },
+    {
+      "key": "limitations",
+      "row": 55,
+      "height": 2,
+      "text": "**Source:** REES46 / Michael Kechinov, Kaggle cosmetics-store events. **Limits:** no order ID, quantity, verified currency, costs or checkout diagnostics. Purchase episodes are proxies. See the methodology for definitions and sensitivity checks.",
+      "col": 0,
+      "width": 24
+    }
+  ]
+}

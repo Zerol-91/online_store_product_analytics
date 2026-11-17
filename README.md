@@ -1,169 +1,128 @@
 # From Cart to Repeat Purchase
 
-Product analytics of a cosmetics store: purchase funnel, cart abandonment, and repeat purchases around Black Friday 2019.
+Product analytics of a cosmetics store: **20.7 million events**, October 2019–February 2020. The project examines where recorded purchase journeys end, how cart conversion differs across segments, and whether Black Friday week buyers return.
 
-**Funnel result (October–February):** 122,189 of 1,049,303 observed cart episodes contain a subsequent purchase: **11.64%**. Cart abandonment is measured within the observed episode; purchases can occur in later episodes.
+**Main finding:** 122,189 of 1,049,303 cart episodes contain a subsequent purchase — **11.64%**. This measures completion within an observed episode; it does not mean the remaining customers never buy later.
 
-**Recommendation to test:** show the complete cost and available fulfillment conditions in the cart before checkout. A conditional +1 percentage-point conversion scenario corresponds to 3,965.74 additional positive purchase-event price units per 10,000 eligible users, assuming unchanged value per converted user. This is a planning scenario, not observed uplift or profit.
+**Proposed next step:** investigate cost and fulfillment uncertainty, then test showing that information in the cart. The source does not identify why users leave; no experiment has been run.
 
-**Status: work in progress.** The analysis, prospective experiment design, local PostgreSQL/Metabase services, and validated reporting export are implemented. Dashboard provisioning and final packaging remain pending; no experiment has been run.
+## Findings
 
-## Business question
+### 1. The ordered funnel does not cover every purchase
 
-Where does the observed purchase journey break down, which customer segments deserve investigation, and which product improvement should be tested first?
+An episode is a `(user_id, user_session)` group split at inactivity gaps **greater than 30 minutes**. The main sequence allows equal timestamps and can involve different products.
 
-A second question examines whether customers whose first observed purchase occurred during Black Friday week make repeat purchases at different rates from nearby weekly cohorts over the same 30- and 60-day horizons.
-
-## Planned analysis
-
-- Validate event coverage, duplicates, prices, and session identifiers.
-- Build an ordered view → cart → purchase funnel and compare cart abandonment across customer and price segments.
-- Measure repeat purchases using complete follow-up windows.
-- Estimate incremental revenue under explicit conversion scenarios and design an A/B test for one prioritized hypothesis.
-- Present the results in a reproducible Metabase dashboard and a short decision memo.
-
-## Data
-
-[eCommerce Events History in Cosmetics Shop](https://www.kaggle.com/datasets/mkechinov/ecommerce-events-history-in-cosmetics-shop), published by Michael Kechinov / REES46 on Kaggle. The five source files cover October 2019–February 2020, as verified during the input audit. Dataset terms remain those specified by the publisher on Kaggle.
-
-Raw data is not included in this repository. The event schema has no order ID, confirmed item quantity, acquisition cost, or cost of goods. Purchasing episodes are therefore operational order proxies, with ambiguity and sensitivity checks documented below. Abandoned-cart value is not equivalent to recoverable revenue, and observational cohort differences do not establish a causal promotion effect.
-
-## Ordered funnel
-
-The primary unit is an episode within `(user_id, user_session)`, split at inactivity gaps **greater than 30 minutes** across all files. There are 4,810,579 episodes. Equal timestamps are allowed in the primary sequence; strict ordering is a sensitivity check.
-
-| Ordered stage | Episodes | Conversion from the previous stage |
+| Ordered stage, October–February | Episodes | Conversion from previous stage |
 |---|---:|---:|
 | Recorded view | 4,501,112 | — |
 | Cart at/after a view | 745,696 | 16.57% |
 | Purchase at/after that cart | 95,850 | 12.85% |
 
-Across **all** 1,049,303 episodes with a cart, 122,189 have a purchase at/after the first cart (**11.64%**). The remaining 927,114 (**88.36%**) have no such purchase within the observed episode. This denominator includes cart episodes without a qualifying view and differs from the ordered-funnel denominator above.
+The **11.64% all-cart conversion** has a broader denominator than the ordered funnel: it includes cart episodes without a prior view. Among 157,595 purchase-containing episodes, 61,745 (**39.18%**) lack the full recorded chain. Missing steps describe coverage; they do not establish tracking faults or customer motives.
 
-There are 157,595 purchase-containing episodes in total. Of these, 61,745 (**39.18%**) lack a complete recorded view → cart → purchase chain. Full-funnel completion therefore does not cover all purchasing activity. Strict timestamp ordering yields 95,808 full chains, 42 fewer than the primary rule. Without the 30-minute split, cart-to-purchase conversion is 12.73%, versus 11.64% with the selected episodes; the unit definition changes the estimate.
+![Observed episode conversion, ordered funnel, and coverage of purchase-containing episodes](docs/img/dashboard_overview.png)
 
-The analysis includes all observed eligible episodes. At the end of the dataset, 176 episodes may still be open, including 49 counted as abandoned-cart episodes. Abandonment is an observed sequence outcome, not a monetary-loss estimate or a causal explanation.
+### 2. Higher entry prices coincide with higher cart conversion
 
-## Validation
+The segment analysis covers **807,560 cart episodes entering November–February**. Visitor history includes October. Entry price uses positive prices of unique products at the first cart timestamp; October-only terciles freeze the boundaries at **3.00** and **6.03** source units. Missing positive entry prices remain Unknown.
 
-All 20,692,840 source rows remain in staging, with duplicate and quality flags. Events occur on all 152 calendar days from October 1, 2019 to February 29, 2020. The 4,598 events without session identifiers remain in staging and are excluded from episode calculations; none are purchases. Positive purchase-event prices reconcile to 6,351,830.29 source units under both session definitions.
+![Cart conversion by observed visitor history and frozen price bands, with descriptive user-clustered 95% intervals](docs/img/cart_conversion_by_segment.png)
 
-The audit found 1,109,098 excess exact-row copies; only 905 are purchases. Their removal changes the positive purchase-price sum by 0.0561%, reported as sensitivity. Missing brands, category labels, nonpositive prices, and long-lived source tokens are documented in the [methodology](docs/methodology.md).
+| Prespecified comparison | Conversion rates | Difference | Adjusted 97.5% interval |
+|---|---|---:|---:|
+| Returning − first observed | 12.04% vs 13.01% | −0.97 pp | [−1.19, −0.75] pp |
+| High − low entry price | 14.95% vs 10.66% | +4.30 pp | [+4.07, +4.53] pp |
 
-## Seven-day user funnel
+Intervals account for repeated episodes and users appearing in both groups; Bonferroni correction covers the two planned comparisons. These are **observational associations**: raising prices is not shown to improve conversion, and lower returning-episode conversion does not explain why people leave.
 
-Each user enters at their first observed view across the complete source history. The primary entry cohort starts on **November 1, 2019**, after the October reference period. Outcomes can span sessions, up to and including seven days after entry. Only users with a fully observable deadline enter the denominator; earlier users do not re-enter at a later view.
+### 3. Black Friday week buyers repeat less than the preceding November cohorts
 
-| Ordered stage | Users | Conversion from the previous stage |
-|---|---:|---:|
-| First observed view with complete follow-up | 1,140,964 | — |
-| Cart within the seven-day window | 169,884 | 14.89% |
-| Purchase after that cart, within the same window | 49,385 | 29.07% |
+A repeat requires a **different purchasing episode beginning strictly after the first observed purchase**. Multiple product rows in the initial episode are not repeat orders. October buyers do not re-enter later first-purchase cohorts.
 
-There are 68,459 users whose first-view window is incomplete and 41,604 observed users without a view; neither group is counted as a failed funnel conversion. The result describes the first observed view cohort, not confirmed new customers. Its population, unit, and horizon differ from the episode funnel, so the conversion rates do not measure a causal benefit of a longer window.
+Both horizons below use the **same users with complete 60-day follow-up**.
 
-Overall seven-day view-to-purchase conversion is **4.33%**. The separate full-history sensitivity includes 1,529,295 mature users and 68,921 full chains (4.51%); the October entry population accounts for the difference.
-
-## Cart conversion by segment
-
-For **807,560 cart episodes starting in November–February**, 99,078 contain a subsequent purchase. Visitor status uses the user's past observed activity, including October. Entry price uses positive prices of unique products at the first cart timestamp; October-only terciles fix the boundaries at **3.00** and **6.03** source units. Missing positive entry prices remain a separate Unknown group.
-
-![Cart conversion by visitor history and frozen entry-price bands, with user-clustered 95% intervals](docs/img/cart_conversion_by_segment.png)
-
-The two planned comparisons use user-clustered analytical intervals, retaining covariance when the same user appears in both groups. Bonferroni correction covers the two comparisons together at family alpha 0.05.
-
-| Planned comparison | Difference | Adjusted contrast interval (97.5%) |
-|---|---:|---:|
-| Returning minus first observed | −0.97 pp | [−1.19, −0.75] pp |
-| High minus low entry price | +4.30 pp | [+4.07, +4.53] pp |
-
-These associations identify questions to investigate; they do not show that raising prices improves conversion or explain why returning visitors convert less often. Group user counts overlap. The 52 potentially open cart episodes remain included. See the [methodology](docs/methodology.md#segments-and-statistical-comparisons) for estimands, price rules, uncertainty assumptions, and limits.
-
-## Repeat purchases and Black Friday
-
-A repeat purchase requires a **different purchasing episode beginning strictly after the user's first observed purchase**. Multiple item rows, duplicates, and later purchase rows within the initial episode are not repeat orders. October purchasers do not re-enter later first-purchase cohorts.
-
-The main 30/60-day comparison uses the **same users with complete 60-day follow-up**. The November first-purchase cohort has 14.60% repeat purchase by day 30 and 20.25% by day 60 (n=26,761); December has 10.29% and 15.91% (n=19,702). January and February have no complete 60-day windows and receive no primary 60-day rate.
-
-![Cumulative repeat purchase for four weekly cohorts on fixed mature populations, and calendar M1/M2 repurchase with incomplete cells marked NA](docs/img/repeat_purchase_cohorts.png)
-
-| First observed purchase | Users | Repeat by 30d | Repeat by 60d | 60d value/user: mean | Median |
-|---|---:|---:|---:|---:|---:|
-| Nov 11–17 | 5,056 | 15.59% | 21.04% | 51.48 | 32.39 |
-| Nov 18–24 | 7,894 | 13.19% | 18.76% | 52.27 | 34.98 |
-| Nov 25–Dec 1: Black Friday week | 6,415 | 12.46% | 17.97% | 48.27 | 32.43 |
-| Dec 2–8 | 4,520 | 10.46% | 16.68% | 47.19 | 29.83 |
-| Nov 29 only: sensitivity | 1,468 | 10.42% | 16.62% | 46.17 | 32.81 |
-
-Value is the sum of positive purchase-event prices in source units, **including the initial purchase**, per eligible buyer. It is not confirmed net sales or profit. The November 29 sensitivity overlaps Black Friday week and cannot be added to it. Calendar M1/M2 cells count repurchase in separate calendar months; they are not cumulative 30/60-day rates.
-
-The Black Friday week's observed 60-day repeat rate is below both preceding weeks, with a descriptive 95% interval of **17.03%–18.91%**. Excluding users with overlapping purchase spans changes that cohort's rate by only **0.013 percentage points** (one cohort member removed). Customer mix, seasonality, unknown discounts, and missing costs prevent a causal promotion-effect or ROI conclusion.
-
-## Prospective experiment: post-cart baseline
-
-The selected hypothesis is to show the complete cost and available fulfillment conditions in the cart before checkout, without a discount. The source does not show the existing interface or why users leave; this is a proposed intervention, not an established cause.
-
-The historical baseline enrolls each user once at their first valid cart in November–February, including those with October cart history. Of 292,094 cart users, **277,852 have complete seven-day follow-up**; 72,498 purchase within the window: **26.09%** (descriptive 95% interval **25.93%–26.26%**). The 14,242 incomplete windows are excluded from the rate, not counted as failures. Strict timestamp ordering changes only two conversions.
-
-Mean positive purchase-event value within the window is **10.35 source units per eligible user**, with median zero. Among converted users, the mean is 39.66. These values can include several purchasing episodes and are not average order value. This baseline differs from both the episode conversion and the first-view user funnel.
-
-The planned test uses user-level assignment, 50/50 allocation, one primary outcome, two-sided alpha 0.05, and power 0.80. The selected planning MDE is **+1 percentage point**, from 26.09% to 27.09% (+3.83% relative). It requires **30,643 users per group**, or 61,286 in total. The educational four-week study budget allows 21 enrollment days and seven follow-up days; the historical replay meets that budget. Actual future enrollment must be checked before launch.
-
-| Assumed absolute uplift | Users per group | Full cycle in historical replay | Added positive purchase-event value per 10,000 users |
+| First observed purchase | Buyers | Repeat by day 30 | Repeat by day 60 |
 |---|---:|---:|---:|
-| +0.5 pp | 121,833 | 105 days | 1,982.87 |
-| **+1 pp: primary** | **30,643** | **28 days** | **3,965.74** |
-| +2 pp | 7,751 | 21 days | 7,931.49 |
+| Nov 11–17 | 5,056 | 15.59% | 21.04% |
+| Nov 18–24 | 7,894 | 13.19% | 18.76% |
+| **Nov 25–Dec 1: Black Friday week** | **6,415** | **12.46%** | **17.97%** |
+| Dec 2–8 | 4,520 | 10.46% | 16.68% |
 
-![Prospective sample sizes and conditional added purchase-event value for three assumed conversion uplifts](docs/img/experiment_design.png)
+![Cumulative repeat purchase on fixed mature populations and calendar M1/M2 repurchasing, with unavailable follow-up marked NA](docs/img/repeat_purchase_cohorts.png)
 
-The value scenario holds the seven-day positive purchase-event value per converted user at 39.6574 source units. It estimates conditional arithmetic, not realized uplift, recoverable abandoned-cart value, profit, or ROI. The primary MDE is justified by study resources; the dataset cannot identify an economic break-even threshold.
+The BF-week 60-day rate is below both preceding weeks and above the following week; its descriptive 95% interval is **17.03%–18.91%**. Calendar M1/M2 measure purchases in separate later calendar months, not cumulative 30/60-day outcomes. Incomplete cells remain NA.
 
-Freeze the planned enrollment and follow-up windows before the experiment. Analyze all eligible assigned users once (intention to treat), including users who do not later see the cart block. Report the effect and its interval; a statistically nonsignificant result is not proof of no useful effect. The proposed tracking and guardrails are described in the [experiment protocol](docs/methodology.md#prospective-protocol-and-conditional-value-scenarios).
+These calendar cohorts are not verified promotion exposures. Customer mix, seasonality, unknown discounts, and missing costs prevent conclusions about the promotion's causal effect, ROI, or displacement of December demand.
 
-## Stack
+## Proposed experiment
 
-Python 3.12, uv, DuckDB, NumPy/SciPy, matplotlib, and Psycopg. Python dependency versions are recorded in `uv.lock`. Compose pins PostgreSQL **17.12-bookworm** and Metabase **v0.64.6**, including image digests. The Metabase dashboard is the next implementation stage.
+**Hypothesis:** showing complete cost and available fulfillment terms in the cart, without a discount, may reduce uncertainty and increase purchase conversion. Confirm the current interface and investigate abandonment reasons before committing to this intervention.
 
-## Documentation
+The historical planning baseline enrolls each user once at their first eligible cart in November–February, including users with October history. Among **277,852 users with complete seven-day windows**, 72,498 purchase: **26.09%**. This is a user-level post-cart outcome, distinct from the episode funnel and the first-view user funnel.
 
-- [Methodology and metric definitions](docs/methodology.md)
+| Planning input | Selected design |
+|---|---|
+| Assignment | Stable user-level randomization, 50/50; analyze all eligible assigned users |
+| Primary outcome | Any purchase within seven days of inclusion |
+| MDE | **+1 percentage point**, from 26.09% to 27.09% |
+| Error rate and power | Two-sided alpha 0.05; power 0.80 |
+| Required sample | **30,643 users per arm**, 61,286 total |
+| Historical duration | **21 enrollment + 7 follow-up days** |
 
-## Reproduction
+The MDE is justified by the selected four-week study budget and historical eligible traffic, **not by an estimated profitability threshold**. Future traffic must be checked. Fix enrollment and follow-up before launch; use a single final readout. Assignment/exposure events and checkout-error, latency, and cancellation/refund guardrails still need instrumentation.
 
-Install uv and run the following commands from the repository root. Manual environment activation is not required.
+**Conditional value scenario:** at an assumed +1 pp uplift and unchanged seven-day positive purchase-event value per converted user:
+
+`10,000 eligible users × 0.01 uplift × 39.6574 value per converted user = 3,965.74 source units`
+
+The conditional mean can include several purchasing episodes; it is not average order value. This is neither a forecast of treatment effect nor realized revenue or profit. [Sample-size and value sensitivity](docs/img/experiment_design.png) and the [prospective protocol](docs/methodology.md#prospective-protocol-and-conditional-value-scenarios) document the alternatives and assumptions.
+
+## Data and analytical choices
+
+Source: [eCommerce Events History in Cosmetics Shop](https://www.kaggle.com/datasets/mkechinov/ecommerce-events-history-in-cosmetics-shop), Michael Kechinov / REES46. Five CSV files contain **20,692,840 events across 152 calendar days**. Raw data is not included; dataset terms remain those specified by the publisher.
+
+- **Preserve evidence:** retain all rows with quality/duplicate flags. Removing exact purchase copies changes the positive purchase-price sum by only **0.0561%**; quantity is unknown, so duplicates are retained in the primary analysis.
+- **Respect sequence and history:** search for an ordered chain; compare strict timestamp ordering and original source-session keys as sensitivity. “First” means first observed, with October as lookback.
+- **Respect follow-up:** exclude immature users from fixed-window denominators; retain NULL outcomes. Sessionless events stay in user history, while episode analysis requires a session token.
+- **Limit monetary claims:** there is no order ID, confirmed quantity, verified currency, cost, or refund history. Purchase episodes are proxies; positive event-price sums are not profit or confirmed net sales.
+
+[Methodology](docs/methodology.md) defines populations, windows, clustering, sensitivity checks, and source limitations. A separate seven-day first-view user funnel is implemented there; its entry and denominator differ from the experimental baseline.
+
+## Dashboard and implementation
+
+The local Metabase dashboard contains **14 SQL questions**, covering the funnel, segments, calendar cohorts, weekly repeats, and experiment planning. Filters affect only compatible populations; no global date filter truncates outcome windows.
+
+Screenshots: [segments](docs/img/dashboard_segments.png) · [cohorts](docs/img/dashboard_cohorts.png) · [experiment planning](docs/img/dashboard_experiment.png).
+
+**Pipeline:** CSV → DuckDB staging and analytical marts → PostgreSQL reporting aggregates → Metabase. Python handles validation, user-clustered statistics, experiment planning, and static figures. PostgreSQL receives **14 tables / 515 aggregate rows**, not raw or user-level histories; Metabase uses a separate private application database.
+
+**Stack:** Python 3.12, uv, DuckDB, NumPy/SciPy, matplotlib, Psycopg, PostgreSQL 17.12, Metabase v0.64.6. Python dependencies are locked; Docker images are pinned by version and digest. SQL lives in [`sql/`](sql/), parameters in [`config/analysis.toml`](config/analysis.toml), builders in [`src/`](src/), dashboard declarations in [`metabase/`](metabase/).
+
+## Reproduce
+
+Requirements: Python 3.12 managed through uv; Docker Desktop with a running Linux engine for BI. Commands below use PowerShell from the repository root. Screenshots and methodology can be reviewed without installing the services.
+
+<details>
+<summary>Environment, source data, analytical build, and local dashboard</summary>
+
+### Environment and inputs
 
 ```powershell
 uv sync --locked
-uv run --locked python -m unittest discover -s tests -v
-```
-
-Download the dataset from Kaggle using **Download** (sign in if required). Create the local input directory and extract the five CSV files directly into it:
-
-```powershell
 New-Item -ItemType Directory -Force -Path data/raw
 ```
 
+Download the dataset from Kaggle, sign in if required, and extract these five files directly into `data/raw/`:
+
 ```text
-data/raw/
-  2019-Oct.csv
-  2019-Nov.csv
-  2019-Dec.csv
-  2020-Jan.csv
-  2020-Feb.csv
+2019-Oct.csv
+2019-Nov.csv
+2019-Dec.csv
+2020-Jan.csv
+2020-Feb.csv
 ```
 
-The extracted files total approximately 2.43 GB according to Kaggle file metadata. Do not rename the files or place them inside an additional archive subfolder. Raw data, local reports, credentials, and database files are excluded from version control.
-
-After extraction, run the single-file audit:
-
-```powershell
-uv run --locked python src/audit_data.py --input data/raw/2019-Oct.csv
-```
-
-The audit checks the header, counts every parsed row, reports event types, UTC timestamp bounds and daily coverage, missing fields, invalid timestamps/prices, zero and negative prices, and unexpected event types. It records the input SHA-256, file size, and runtime versions in `data/reports/2019-Oct_audit.json`. CSV structure errors stop the audit instead of silently skipping rows.
-
-To reproduce the full five-file audit, including duplicate sensitivity:
+Audit all inputs, including read-only duplicate sensitivity:
 
 ```powershell
 foreach ($month in @('2019-Oct', '2019-Nov', '2019-Dec', '2020-Jan', '2020-Feb')) {
@@ -172,9 +131,9 @@ foreach ($month in @('2019-Oct', '2019-Nov', '2019-Dec', '2020-Jan', '2020-Feb')
 }
 ```
 
-All source columns are initially read as strings; parsing failures are counted separately. Exact duplicates match all nine original fields, excluding file metadata. `--duplicates` adds a read-only sensitivity calculation; it does not remove any rows. Larger groupings may use temporary disk space in `data/processed/audit_tmp/` under the 1 GB DuckDB memory limit. All five files were audited; detailed JSON reports remain local. This is the audit step, not the complete analytical pipeline.
+### Build analysis
 
-Build staging, then episodes and funnels:
+Run in order; stop and resolve any failed command before proceeding:
 
 ```powershell
 uv run --locked python src/build_staging.py
@@ -187,21 +146,11 @@ uv run --locked python src/plot_cohorts.py
 uv run --locked python src/plot_experiment.py
 ```
 
-These commands populate `data/processed/shop.duckdb`; local reports are `data/reports/staging_build.json`, `data/reports/funnel_build.json`, `data/reports/user_analysis.json`, `data/reports/cohort_analysis.json`, and `data/reports/experiment_baseline.json`. The plotting commands export the figures above from validated reports. The builds use transactions and record input provenance or staging/table fingerprints. The default memory limit is 1 GB with two worker threads; temporary files stay in `data/processed/shop_tmp/`. A successful staging rebuild invalidates downstream funnel/user/segment/cohort/experiment tables; a funnel rebuild invalidates cart segments and cohorts. Rerun downstream builders and plots after the corresponding upstream rebuild.
+Outputs: `data/processed/shop.duckdb`, validated JSON reports in `data/reports/`, and figures in `docs/img/`. The default DuckDB limit is 1 GB and two threads. Rebuilding upstream invalidates dependent marts; rerun downstream stages in the order above. Business formulas are implemented once and reused by reporting.
 
-The analysis parameters are in `config/analysis.toml`. `episode_events` maps eligible source records to episodes; `episodes` is the primary per-episode view; `session_funnel` stores per-unit results for both session definitions; `funnel_summary` contains counts and rates for both timestamp rules. The original `sessions` table remains the source-key diagnostic baseline.
+### Start and populate BI
 
-`users` retains observed activity history even when session keys are missing. `user_funnel` stores fixed-window outcomes and eligibility flags; `user_funnel_summary` separates timestamp rules and entry populations. `cart_entry_prices` and `price_thresholds` establish entry prices and reference-only cutpoints; `cart_segments` stores episode classifications, `cart_segment_users` supplies cluster counts, and `cart_segment_summary` contains reconciled group totals. Statistical estimates and planned contrasts are saved in the analysis JSON report.
-
-`purchase_events` retains purchase records; `purchase_episodes` groups them into order proxies, and `buyer_history` anchors first and strictly later episodes. `buyer_outcomes` stores horizon maturity and outcomes. `cohort_definitions`/`cohort_memberships` define entry groups; `cohort_summary`, `cohort_curves`, and `monthly_repurchase` supply reporting outputs, with counts, values, descriptive intervals, and ambiguity sensitivity in the cohort report.
-
-`cart_experiment_users` anchors the historical post-cart baseline once per user; `cart_experiment_summary` retains both timestamp rules, and `cart_experiment_daily` counts unique historical enrollments. `experiment_scenarios` preserves the prospective calculations for reporting. The experiment report also records the selected design, budget feasibility, and conditional value assumptions. Rebuild it after staging changes; it does not depend on session or cohort tables.
-
-All builders have run on the full dataset. There are 80 self-contained tests and five additional opt-in PostgreSQL integration tests. They cover analytical boundaries, repeat builds and rollback, prospective power against binomial simulation, reporting types/keys, stale-report rejection, and actual database permissions, numeric precision, and transaction behavior.
-
-## Local PostgreSQL and Metabase services
-
-Start Docker Desktop with the Linux engine, then run:
+Start Docker Desktop, then:
 
 ```powershell
 uv run --locked python src/local_services.py init
@@ -211,26 +160,57 @@ uv run --locked python src/export_to_postgres.py
 uv run --locked python src/local_services.py status
 ```
 
-`init` creates an ignored `.env` with generated credentials and retains an existing configured file. `.env.example` documents the keys without passwords. The helper locates Docker on PATH or in the standard Windows Docker Desktop directory and supplies that directory only to its child process; no system PATH change is required. `up` waits for both service health checks.
+`init` generates local credentials in ignored `.env` and retains existing settings. Keep that file with the database volume: database initialization runs only once. PostgreSQL is bound to `127.0.0.1:5433`; Metabase to [localhost:3000](http://localhost:3000). The helper locates Docker on PATH or in its standard Windows installation directory.
 
-The defaults expose PostgreSQL at `127.0.0.1:5433` and Metabase at [localhost:3000](http://localhost:3000). Ports can be changed in `.env`. Both are bound to the local host. Metabase uses the separate `metabase_app` database; analytics are published to `analytics.reporting`. The `analytics_loader` role writes reporting tables, while `analytics_reader` can only read them and cannot connect to the application database. For a later Metabase analytics connection, the container-network host is `postgres`, port `5432`, database `analytics`, and user `analytics_reader`; use the password from the local `.env`.
-
-The services have been started and checked. Metabase currently reaches its application database and exposes a healthy setup screen; analytics connection/dashboard creation will be automated in the next stage. This infrastructure setup does not yet restore dashboard cards.
-
-The export publishes **14 compact tables / 515 rows**, with no raw events or user-level histories. `config/reporting.toml` selects nine calculated DuckDB marts; the other tables preserve segment estimates/contrasts, cohort and experiment intervals, and report metadata. Statistical values come from the existing validated reports; business formulas are not recomputed in PostgreSQL.
-
-Before writing, the exporter verifies 25 source-table fingerprints against those reports. It rejects stale reports, invalid keys, required NULLs, non-finite values, unexpected tables, and oversized exports. All destination tables are replaced in one transaction, with primary keys and exact row-by-row round-trip comparison, including decimal values and incomplete-cohort NULLs. Repeating the command preserves counts and contents. A failure after earlier tables were loaded rolls the entire export back. `data/reports/postgres_export.json` records the published row counts and source digests and stays outside Git.
-
-Run the five live database checks explicitly after starting the services and building the analysis:
+On first use, create an administrator account in the Metabase browser setup; the sample database can remain. Then authenticate locally and provision the project:
 
 ```powershell
-$env:RUN_LOCAL_POSTGRES_TESTS = '1'
-uv run --locked python -m unittest discover -s tests -p test_postgres_integration.py -v
-Remove-Item Env:RUN_LOCAL_POSTGRES_TESTS
+uv run --locked python src/metabase_client.py login
+uv run --locked python src/setup_metabase.py
+uv run --locked python src/validate_metabase.py
 ```
 
-The default test command skips these five integration checks and runs the self-contained tests without Docker or source CSVs. Local credentials must stay with the existing database volume: the database bootstrap runs only on its first initialization. To stop the project services while retaining their data:
+Login prompts for email and a hidden password, saving only a session in ignored `metabase/local/`. The setup script prints the dashboard URL. Repeated runs update the same objects; the analytics connection uses a read-only role. Reporting snapshots must match the validated analytical outputs before provisioning.
+
+Optional screenshot refresh uses Playwright with an installed Microsoft Edge browser:
+
+```powershell
+uv run --locked python src/capture_dashboard.py
+```
+
+Stop services while retaining data:
 
 ```powershell
 uv run --locked python src/local_services.py stop
 ```
+
+</details>
+
+## Validation
+
+The latest verified suite passed **95 tests**: 88 self-contained tests and seven opt-in PostgreSQL/Metabase integration tests. Checks cover event ordering, duplicate/price policies, boundary windows, overlapping users, repeat purchases, power calculations, repeat builds, and transactional rollback. Metabase results match PostgreSQL across **21 query/filter cases**; restoration into a separate empty application database was verified. Dashboard text was checked at 1366, 1600, and 1920 pixels.
+
+Run the self-contained suite without source CSVs or services:
+
+```powershell
+uv run --locked python -m unittest discover -s tests
+```
+
+<details>
+<summary>Include the seven live integration tests after starting services and logging in</summary>
+
+```powershell
+$env:RUN_LOCAL_POSTGRES_TESTS = '1'
+$env:RUN_LOCAL_METABASE_TESTS = '1'
+try {
+    uv run --locked python -m unittest discover -s tests
+    if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+} finally {
+    Remove-Item Env:RUN_LOCAL_POSTGRES_TESTS -ErrorAction SilentlyContinue
+    Remove-Item Env:RUN_LOCAL_METABASE_TESTS -ErrorAction SilentlyContinue
+}
+```
+
+</details>
+
+The analytical models and local dashboard are implemented. Final acceptance of the complete reproduction workflow remains pending.
